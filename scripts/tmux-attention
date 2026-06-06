@@ -1,0 +1,55 @@
+#!/bin/sh
+
+usage() {
+	cat <<'EOF'
+Usage: tmux-attention [input|blocked|review|done|clear]
+
+Sets the tmux window option @agent_attention for the current tmux pane.
+Without an argument, defaults to input.
+EOF
+}
+
+state="${1:-input}"
+
+case "$state" in
+	input|blocked|review|done|clear|none|off)
+		;;
+	-h|--help|help)
+		usage
+		exit 0
+		;;
+	*)
+		printf 'tmux-attention: unknown state: %s\n' "$state" >&2
+		usage >&2
+		exit 2
+		;;
+esac
+
+if [ -z "${TMUX_PANE:-}" ]; then
+	printf '\a'
+	exit 0
+fi
+
+if ! command -v tmux >/dev/null 2>&1; then
+	printf '\a'
+	exit 0
+fi
+
+target="$TMUX_PANE"
+
+case "$state" in
+	clear|none|off)
+		tmux set-window-option -q -t "$target" @agent_attention ''
+		exit 0
+		;;
+esac
+
+tmux set-window-option -q -t "$target" @agent_attention "$state"
+
+attached="$(tmux display-message -p -t "$target" '#{session_attached}' 2>/dev/null || printf '0')"
+active="$(tmux display-message -p -t "$target" '#{window_active}' 2>/dev/null || printf '0')"
+
+if [ "$attached" != "0" ] && [ "$active" = "1" ]; then
+	script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+	"$script_dir/clear-after-delay" "$target"
+fi

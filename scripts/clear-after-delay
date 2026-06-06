@@ -1,0 +1,17 @@
+#!/bin/sh
+
+target="${1:-${TMUX_PANE:-}}"
+
+if [ -z "$target" ] || ! command -v tmux >/dev/null 2>&1; then
+	exit 0
+fi
+
+delay="$(tmux show-option -gqv @tmux_attention_clear_delay 2>/dev/null || printf '8')"
+
+case "$delay" in
+	''|*[!0-9]*)
+		delay=8
+		;;
+esac
+
+tmux run-shell -b "sleep $delay; tmux set-window-option -q -t '$target' @agent_attention ''"

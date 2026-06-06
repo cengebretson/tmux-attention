@@ -1,0 +1,277 @@
+#!/bin/sh
+
+set -eu
+
+usage() {
+	cat <<'EOF'
+Usage: install-hooks [--status|--print|--uninstall] [claude|codex|all]
+
+Installs tmux-attention hooks for Claude Code and/or Codex.
+
+Environment overrides for tests or custom locations:
+  TMUX_ATTENTION_CLI
+  TMUX_ATTENTION_CLAUDE_SETTINGS
+  TMUX_ATTENTION_CODEX_HOOKS
+EOF
+}
+
+action="install"
+target="${1:-all}"
+
+case "$target" in
+	--status)
+		action="status"
+		target="${2:-all}"
+		;;
+	--print)
+		action="print"
+		target="${2:-all}"
+		;;
+	--uninstall)
+		action="uninstall"
+		target="${2:-all}"
+		;;
+	-h|--help|help)
+		usage
+		exit 0
+		;;
+esac
+
+case "$target" in
+	claude|codex|all)
+		;;
+	*)
+		printf 'install-hooks: unknown target: %s\n' "$target" >&2
+		usage >&2
+		exit 2
+		;;
+esac
+
+if ! command -v python3 >/dev/null 2>&1; then
+	printf 'install-hooks: python3 is required to edit JSON hook config files\n' >&2
+	exit 1
+fi
+
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+CLI_PATH="${TMUX_ATTENTION_CLI:-$SCRIPT_DIR/tmux-attention}"
+CLAUDE_SETTINGS="${TMUX_ATTENTION_CLAUDE_SETTINGS:-$HOME/.claude/settings.json}"
+CODEX_HOOKS="${TMUX_ATTENTION_CODEX_HOOKS:-${CODEX_HOME:-$HOME/.codex}/hooks.json}"
+
+export TMUX_ATTENTION_INSTALL_ACTION="$action"
+export TMUX_ATTENTION_INSTALL_TARGET="$target"
+export TMUX_ATTENTION_CLI_PATH="$CLI_PATH"
+export TMUX_ATTENTION_CLAUDE_PATH="$CLAUDE_SETTINGS"
+export TMUX_ATTENTION_CODEX_PATH="$CODEX_HOOKS"
+
+python3 - <<'PY'
+import copy
+import json
+import os
+import shlex
+import shutil
+from datetime import datetime
+from pathlib import Path
+
+ACTION = os.environ["TMUX_ATTENTION_INSTALL_ACTION"]
+TARGET = os.environ["TMUX_ATTENTION_INSTALL_TARGET"]
+CLI = os.environ["TMUX_ATTENTION_CLI_PATH"]
+CLAUDE_PATH = Path(os.environ["TMUX_ATTENTION_CLAUDE_PATH"]).expanduser()
+CODEX_PATH = Path(os.environ["TMUX_ATTENTION_CODEX_PATH"]).expanduser()
+MARKER = "tmux-attention:"
+
+
+def command(state, marker):
+    return f"{shlex.quote(CLI)} {state} # {MARKER}{marker}"
+
+
+CLAUDE_HOOKS = {
+    "Notification": [
+        {
+            "matcher": "permission_prompt|idle_prompt",
+            "hooks": [
+                {
+                    "type": "command",
+                    "command": command("input", "claude:notification"),
+                }
+            ],
+        }
+    ],
+    "StopFailure": [
+        {
+            "hooks": [
+                {
+                    "type": "command",
+                    "command": command("blocked", "claude:stop-failure"),
+                }
+            ],
+        }
+    ],
+    "UserPromptSubmit": [
+        {
+            "hooks": [
+                {
+                    "type": "command",
+                    "command": command("clear", "claude:user-prompt-submit"),
+                }
+            ],
+        }
+    ],
+}
+
+CODEX_HOOKS = {
+    "PermissionRequest": [
+        {
+            "matcher": ".*",
+            "hooks": [
+                {
+                    "type": "command",
+                    "command": command("input", "codex:permission-request"),
+                }
+            ],
+        }
+    ],
+    "UserPromptSubmit": [
+        {
+            "hooks": [
+                {
+                    "type": "command",
+                    "command": command("clear", "codex:user-prompt-submit"),
+                }
+            ],
+        }
+    ],
+}
+
+
+def targets():
+    if TARGET == "all":
+        return [("claude", CLAUDE_PATH, CLAUDE_HOOKS), ("codex", CODEX_PATH, CODEX_HOOKS)]
+    if TARGET == "claude":
+        return [("claude", CLAUDE_PATH, CLAUDE_HOOKS)]
+    return [("codex", CODEX_PATH, CODEX_HOOKS)]
+
+
+def load_json(path):
+    if not path.exists():
+        return {}
+    with path.open("r", encoding="utf-8") as handle:
+        text = handle.read().strip()
+    if not text:
+        return {}
+    return json.loads(text)
+
+
+def write_json(path, data):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        stamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        shutil.copy2(path, f"{path}.bak.{stamp}")
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    with tmp_path.open("w", encoding="utf-8") as handle:
+        json.dump(data, handle, indent=2)
+        handle.write("\n")
+    tmp_path.replace(path)
+
+
+def remove_managed_hooks(config):
+    hooks = config.get("hooks")
+    if not isinstance(hooks, dict):
+        config["hooks"] = {}
+        return config
+
+    for event in list(hooks):
+        groups = hooks[event]
+        if not isinstance(groups, list):
+            continue
+
+        next_groups = []
+        for group in groups:
+            if not isinstance(group, dict):
+                next_groups.append(group)
+                continue
+
+            group_copy = copy.deepcopy(group)
+            handlers = group_copy.get("hooks")
+            if not isinstance(handlers, list):
+                next_groups.append(group_copy)
+                continue
+
+            group_copy["hooks"] = [
+                handler
+                for handler in handlers
+                if not (
+                    isinstance(handler, dict)
+                    and isinstance(handler.get("command"), str)
+                    and MARKER in handler["command"]
+                )
+            ]
+
+            if group_copy["hooks"]:
+                next_groups.append(group_copy)
+
+        if next_groups:
+            hooks[event] = next_groups
+        else:
+            del hooks[event]
+
+    return config
+
+
+def merge_hooks(config, managed_hooks):
+    config = remove_managed_hooks(config)
+    hooks = config.setdefault("hooks", {})
+    for event, groups in managed_hooks.items():
+        hooks.setdefault(event, [])
+        hooks[event].extend(copy.deepcopy(groups))
+    return config
+
+
+def has_managed_hooks(config, managed_hooks):
+    hooks = config.get("hooks")
+    if not isinstance(hooks, dict):
+        return False
+    expected = [
+        handler["command"]
+        for groups in managed_hooks.values()
+        for group in groups
+        for handler in group["hooks"]
+    ]
+    commands = [
+        handler.get("command")
+        for groups in hooks.values()
+        if isinstance(groups, list)
+        for group in groups
+        if isinstance(group, dict)
+        for handler in group.get("hooks", [])
+        if isinstance(handler, dict)
+    ]
+    return all(item in commands for item in expected)
+
+
+def print_snippet(name, managed_hooks):
+    print(f"# {name}")
+    print(json.dumps({"hooks": managed_hooks}, indent=2))
+
+
+for name, path, managed_hooks in targets():
+    if ACTION == "print":
+        print_snippet(name, managed_hooks)
+        continue
+
+    config = load_json(path)
+
+    if ACTION == "status":
+        state = "installed" if has_managed_hooks(config, managed_hooks) else "not installed"
+        print(f"{name}: {state} ({path})")
+        continue
+
+    if ACTION == "uninstall":
+        next_config = remove_managed_hooks(config)
+        write_json(path, next_config)
+        print(f"{name}: uninstalled ({path})")
+        continue
+
+    next_config = merge_hooks(config, managed_hooks)
+    write_json(path, next_config)
+    print(f"{name}: installed ({path})")
+PY
