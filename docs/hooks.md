@@ -13,6 +13,9 @@ After TPM installs the plugin, run:
 ~/.config/tmux/plugins/tmux-attention/scripts/install-hooks all
 ```
 
+For Claude Code, use `/hooks` after installation to verify the installed hooks.
+For Codex, open `/hooks` after installation and trust the new hook definitions.
+
 Check what is installed:
 
 ```sh
@@ -51,6 +54,10 @@ Installed hooks:
 | `StopFailure` | none | `tmux-attention blocked` |
 | `UserPromptSubmit` | none | `tmux-attention clear` |
 
+After installing Claude Code hooks, use `/hooks` in Claude Code to verify the
+installed hook definitions. The Claude Code hook menu is read-only; edits are
+made in the settings JSON file.
+
 ## Codex
 
 Default target:
@@ -65,6 +72,10 @@ Installed hooks:
 |-------|---------|---------|
 | `PermissionRequest` | `.*` | `tmux-attention input` |
 | `UserPromptSubmit` | none | `tmux-attention clear` |
+
+After installing Codex hooks, use `/hooks` in Codex to review and trust the
+installed hook definitions. Codex skips non-managed hooks until they are
+trusted.
 
 `Stop -> review` is intentionally not installed by default because it can mark
 every normal turn as needing review.

@@ -31,6 +31,9 @@ After TPM installs the plugin, install agent hooks for the agent you use:
 ~/.config/tmux/plugins/tmux-attention/scripts/install-hooks claude
 ```
 
+For Claude Code, use `/hooks` to verify the installed hooks. For Codex, use
+`/hooks` to review and trust the installed hooks before they can run.
+
 Or install hooks for both:
 
 ```sh
@@ -124,6 +127,9 @@ uses.
 | `install-hooks --print all` | Print JSON without editing files |
 | `install-hooks --uninstall all` | Remove managed hook entries |
 
+Claude Code users can verify installed hooks with `/hooks`. Codex users must
+review and trust installed hooks with `/hooks` before Codex will run them.
+
 ## Test
 
 Run the local check script:
@@ -166,8 +172,9 @@ Check whether hooks are installed:
 ~/.config/tmux/plugins/tmux-attention/scripts/install-hooks --status all
 ```
 
-Codex requires hook review/trust before non-managed hooks run. In Codex, use
-`/hooks` to inspect and trust the installed hook definitions.
+Claude Code's `/hooks` menu is useful for verifying hook configuration. Codex
+requires hook review/trust before non-managed hooks run; in Codex, use `/hooks`
+to inspect and trust the installed hook definitions.
 
 ### Command Not Found
 
