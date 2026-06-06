@@ -3,6 +3,8 @@
 usage() {
 	cat <<'EOF'
 Usage: tmux-attention [input|blocked|review|done|clear]
+       tmux-attention status-format
+       tmux-attention catppuccin-format
 
 Sets the tmux window option @agent_attention for the current tmux pane.
 Without an argument, defaults to input.
@@ -13,6 +15,20 @@ state="${1:-input}"
 
 case "$state" in
 	input|blocked|review|done|clear|none|off)
+		;;
+	status-format|format)
+		cat <<'EOF'
+set -g window-status-format "#{E:@tmux_attention_status}#I:#W"
+set -g window-status-current-format "#{E:@tmux_attention_status}#I:#W"
+EOF
+		exit 0
+		;;
+	catppuccin-format|catppuccin)
+		cat <<'EOF'
+set -g @catppuccin_window_text "#{E:@tmux_attention_status}#W"
+set -g @catppuccin_window_current_text "#{E:@tmux_attention_status}#W"
+EOF
+		exit 0
 		;;
 	-h|--help|help)
 		usage

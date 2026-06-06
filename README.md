@@ -19,22 +19,22 @@ until hooks or another integration calls the CLI.
 Add the plugin to your tmux config:
 
 ```tmux
-set -g @plugin 'cengebretsont/tmux-attention'
+set -g @plugin 'cengebretson/tmux-attention'
 ```
 
 Then press `prefix + I` to install plugins, or run TPM's install command.
 
-After TPM installs the plugin, install agent hooks:
+After TPM installs the plugin, install agent hooks for the agent you use:
+
+```sh
+~/.config/tmux/plugins/tmux-attention/scripts/install-hooks codex
+~/.config/tmux/plugins/tmux-attention/scripts/install-hooks claude
+```
+
+Or install hooks for both:
 
 ```sh
 ~/.config/tmux/plugins/tmux-attention/scripts/install-hooks all
-```
-
-Check or remove those hooks later:
-
-```sh
-~/.config/tmux/plugins/tmux-attention/scripts/install-hooks --status all
-~/.config/tmux/plugins/tmux-attention/scripts/install-hooks --uninstall all
 ```
 
 Add the status helper wherever your theme renders window text:
@@ -42,6 +42,12 @@ Add the status helper wherever your theme renders window text:
 ```tmux
 set -g window-status-format "#{E:@tmux_attention_status}#I:#W"
 set -g window-status-current-format "#{E:@tmux_attention_status}#I:#W"
+```
+
+The CLI can print that snippet:
+
+```sh
+~/.config/tmux/plugins/tmux-attention/scripts/tmux-attention status-format
 ```
 
 ## Configure
@@ -56,7 +62,7 @@ set -g @tmux_attention_icon_done ""
 set -g @tmux_attention_clear_delay "8"
 set -g @tmux_attention_clear_on_view "on"
 
-set -g @plugin 'cengebretsont/tmux-attention'
+set -g @plugin 'cengebretson/tmux-attention'
 ```
 
 Catppuccin example:
@@ -64,6 +70,12 @@ Catppuccin example:
 ```tmux
 set -g @catppuccin_window_text "#{E:@tmux_attention_status}#W"
 set -g @catppuccin_window_current_text "#{E:@tmux_attention_status}#W"
+```
+
+Print the Catppuccin snippet:
+
+```sh
+~/.config/tmux/plugins/tmux-attention/scripts/tmux-attention catppuccin-format
 ```
 
 ## Use
@@ -77,6 +89,8 @@ tmux-attention blocked
 tmux-attention review
 tmux-attention done
 tmux-attention clear
+tmux-attention status-format
+tmux-attention catppuccin-format
 ```
 
 After TPM installs the plugin, you can put the CLI on your `PATH`:
@@ -100,6 +114,15 @@ Optional Claude Code and Codex hooks can call the same CLI:
 
 See [docs/hooks.md](docs/hooks.md) for the exact files and events the installer
 uses.
+
+| Command | Purpose |
+|---------|---------|
+| `install-hooks claude` | Install Claude Code hooks |
+| `install-hooks codex` | Install Codex hooks |
+| `install-hooks all` | Install both hook sets |
+| `install-hooks --status all` | Show installed state |
+| `install-hooks --print all` | Print JSON without editing files |
+| `install-hooks --uninstall all` | Remove managed hook entries |
 
 ## Test
 

@@ -103,6 +103,9 @@ assert_eq "review" "$(tmux_test show-window-option -t "$pane" -v @agent_attentio
 TMUX_PANE="$pane" "$ROOT_DIR/scripts/tmux-attention" clear
 assert_eq "" "$(tmux_test show-window-option -t "$pane" -v @agent_attention)" "CLI clears state"
 
+assert_contains "window-status-format" "$("$ROOT_DIR/scripts/tmux-attention" status-format)" "CLI prints default status format"
+assert_contains "@catppuccin_window_text" "$("$ROOT_DIR/scripts/tmux-attention" catppuccin-format)" "CLI prints Catppuccin status format"
+
 tmux_test set-option -gq @tmux_attention_icon_input "CUSTOM"
 tmux_test set-option -gq @tmux_attention_clear_delay "3"
 "$ROOT_DIR/tmux-attention.tmux"
