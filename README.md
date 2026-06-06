@@ -135,6 +135,55 @@ tests/check.sh
 The check starts an isolated tmux server and verifies plugin loading, default
 options, user overrides, hook installation, and CLI state changes.
 
+## Troubleshooting
+
+### Marker Does Not Show
+
+Confirm the plugin is loaded:
+
+```sh
+tmux show-option -gqv @tmux_attention_status
+```
+
+If that prints a status format, make sure your tmux theme includes:
+
+```tmux
+#{E:@tmux_attention_status}
+```
+
+You can print default snippets with:
+
+```sh
+~/.config/tmux/plugins/tmux-attention/scripts/tmux-attention status-format
+~/.config/tmux/plugins/tmux-attention/scripts/tmux-attention catppuccin-format
+```
+
+### Hooks Are Not Firing
+
+Check whether hooks are installed:
+
+```sh
+~/.config/tmux/plugins/tmux-attention/scripts/install-hooks --status all
+```
+
+Codex requires hook review/trust before non-managed hooks run. In Codex, use
+`/hooks` to inspect and trust the installed hook definitions.
+
+### Command Not Found
+
+Hooks use the full plugin path by default. For manual use from your shell,
+either call the script directly:
+
+```sh
+~/.config/tmux/plugins/tmux-attention/scripts/tmux-attention input
+```
+
+Or symlink it onto your `PATH`:
+
+```sh
+ln -s ~/.config/tmux/plugins/tmux-attention/scripts/tmux-attention ~/.local/bin/tmux-attention
+```
+
 ## States
 
 | State | Default Icon | Intended Use |
@@ -151,3 +200,7 @@ options, user overrides, hook installation, and CLI state changes.
 - `reference/tmux-attention.fish` is kept only as the original local prototype.
 - Clear-on-view hooks are installed at tmux hook index `90`, so re-sourcing the
   plugin updates the hook instead of appending duplicates.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
