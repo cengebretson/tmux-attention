@@ -76,6 +76,9 @@ pass "scripts/clear-after-delay has valid sh syntax"
 sh -n "$ROOT_DIR/scripts/install-hooks"
 pass "scripts/install-hooks has valid sh syntax"
 
+sh -n "$ROOT_DIR/scripts/setup"
+pass "scripts/setup has valid sh syntax"
+
 bash -n "$ROOT_DIR/tmux-attention.tmux"
 pass "tmux-attention.tmux has valid bash syntax"
 
@@ -181,5 +184,52 @@ PY
 )"
 assert_eq "0" "$uninstalled_marker_count" "hook uninstaller removes managed entries"
 rm -rf "$HOOK_TMP"
+
+SETUP_TMP="$(mktemp -d "${TMPDIR:-/tmp}/tmux-attention-setup.XXXXXX")"
+SETUP_TMUX_CONF="$SETUP_TMP/.tmux.conf"
+SETUP_CLAUDE_SETTINGS="$SETUP_TMP/claude/settings.json"
+SETUP_CODEX_HOOKS="$SETUP_TMP/codex/hooks.json"
+
+TMUX_ATTENTION_TMUX_CONF="$SETUP_TMUX_CONF" \
+TMUX_ATTENTION_CLAUDE_SETTINGS="$SETUP_CLAUDE_SETTINGS" \
+TMUX_ATTENTION_CODEX_HOOKS="$SETUP_CODEX_HOOKS" \
+	"$ROOT_DIR/scripts/setup" codex >/dev/null
+
+assert_contains "window-status-format" "$(cat "$SETUP_TMUX_CONF")" "setup writes default tmux status snippet"
+assert_contains "codex: installed" "$(
+	TMUX_ATTENTION_CLAUDE_SETTINGS="$SETUP_CLAUDE_SETTINGS" \
+	TMUX_ATTENTION_CODEX_HOOKS="$SETUP_CODEX_HOOKS" \
+		"$ROOT_DIR/scripts/install-hooks" --status codex
+)" "setup installs selected agent hooks"
+
+TMUX_ATTENTION_TMUX_CONF="$SETUP_TMUX_CONF" \
+TMUX_ATTENTION_CLAUDE_SETTINGS="$SETUP_CLAUDE_SETTINGS" \
+TMUX_ATTENTION_CODEX_HOOKS="$SETUP_CODEX_HOOKS" \
+	"$ROOT_DIR/scripts/setup" codex --status-line catppuccin >/dev/null
+
+setup_block_count="$(
+	python3 - "$SETUP_TMUX_CONF" <<'PY'
+import sys
+from pathlib import Path
+
+text = Path(sys.argv[1]).read_text(encoding="utf-8")
+print(text.count("# tmux-attention: begin"))
+PY
+)"
+assert_eq "1" "$setup_block_count" "setup updates one managed tmux config block"
+assert_contains "@catppuccin_window_text" "$(cat "$SETUP_TMUX_CONF")" "setup can switch to Catppuccin status snippet"
+
+TMUX_ATTENTION_TMUX_CONF="$SETUP_TMP/no-status.conf" \
+TMUX_ATTENTION_CLAUDE_SETTINGS="$SETUP_TMP/no-status-claude.json" \
+TMUX_ATTENTION_CODEX_HOOKS="$SETUP_TMP/no-status-codex.json" \
+	"$ROOT_DIR/scripts/setup" codex --status-line none >/dev/null
+
+if [ ! -e "$SETUP_TMP/no-status.conf" ]; then
+	pass "setup can skip tmux status config"
+else
+	fail "setup can skip tmux status config"
+fi
+
+rm -rf "$SETUP_TMP"
 
 printf 'all checks passed\n'

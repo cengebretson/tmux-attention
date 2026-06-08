@@ -1,0 +1,132 @@
+#!/bin/sh
+
+set -eu
+
+usage() {
+	cat <<'EOF'
+Usage: setup [claude|codex|all] [--status-line default|catppuccin|none] [--tmux-config PATH] [--no-hooks]
+
+Installs tmux-attention agent hooks and writes a managed tmux status snippet.
+
+Defaults:
+  target: all
+  status line: default
+  tmux config: ~/.tmux.conf
+
+Environment overrides:
+  TMUX_ATTENTION_TMUX_CONF
+EOF
+}
+
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+target="all"
+status_line="default"
+install_hooks="yes"
+tmux_config="${TMUX_ATTENTION_TMUX_CONF:-$HOME/.tmux.conf}"
+
+while [ "$#" -gt 0 ]; do
+	case "$1" in
+		claude|codex|all)
+			target="$1"
+			shift
+			;;
+		--status-line)
+			if [ "$#" -lt 2 ]; then
+				printf 'setup: --status-line requires default, catppuccin, or none\n' >&2
+				exit 2
+			fi
+			status_line="$2"
+			shift 2
+			;;
+		--tmux-config)
+			if [ "$#" -lt 2 ]; then
+				printf 'setup: --tmux-config requires a path\n' >&2
+				exit 2
+			fi
+			tmux_config="$2"
+			shift 2
+			;;
+		--no-hooks)
+			install_hooks="no"
+			shift
+			;;
+		-h|--help|help)
+			usage
+			exit 0
+			;;
+		*)
+			printf 'setup: unknown argument: %s\n' "$1" >&2
+			usage >&2
+			exit 2
+			;;
+	esac
+done
+
+case "$status_line" in
+	default|catppuccin|none)
+		;;
+	*)
+		printf 'setup: unknown status line: %s\n' "$status_line" >&2
+		exit 2
+		;;
+esac
+
+write_status_snippet() {
+	config_path="$1"
+	tmp_path="$(mktemp "${TMPDIR:-/tmp}/tmux-attention-setup.XXXXXX")"
+	begin="# tmux-attention: begin"
+	end="# tmux-attention: end"
+
+	mkdir -p "$(dirname -- "$config_path")"
+
+	if [ -f "$config_path" ]; then
+		stamp="$(date +%Y%m%d%H%M%S)"
+		cp "$config_path" "$config_path.bak.$stamp"
+		awk -v begin="$begin" -v end="$end" '
+			$0 == begin { skip = 1; next }
+			$0 == end { skip = 0; next }
+			!skip { print }
+		' "$config_path" >"$tmp_path"
+	else
+		: >"$tmp_path"
+	fi
+
+	if [ -s "$tmp_path" ] && [ "$(tail -c 1 "$tmp_path" | wc -l | tr -d ' ')" = "0" ]; then
+		printf '\n' >>"$tmp_path"
+	fi
+
+	{
+		printf '%s\n' "$begin"
+		case "$status_line" in
+			default)
+				"$SCRIPT_DIR/tmux-attention" status-format
+				;;
+			catppuccin)
+				"$SCRIPT_DIR/tmux-attention" catppuccin-format
+				;;
+		esac
+		printf '%s\n' "$end"
+	} >>"$tmp_path"
+
+	mv "$tmp_path" "$config_path"
+	printf 'tmux config: updated (%s)\n' "$config_path"
+}
+
+if [ "$install_hooks" = "yes" ]; then
+	"$SCRIPT_DIR/install-hooks" "$target"
+else
+	printf 'agent hooks: skipped\n'
+fi
+
+if [ "$status_line" != "none" ]; then
+	write_status_snippet "$tmux_config"
+else
+	printf 'tmux config: skipped\n'
+fi
+
+cat <<'EOF'
+
+Next:
+  1. Reload tmux config: tmux source-file ~/.tmux.conf
+  2. In Claude Code or Codex, open /hooks and verify/trust the installed hooks.
+EOF

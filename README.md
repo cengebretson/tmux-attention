@@ -24,23 +24,30 @@ set -g @plugin 'cengebretson/tmux-attention'
 
 Then press `prefix + I` to install plugins, or run TPM's install command.
 
-After TPM installs the plugin, install agent hooks for the agent you use:
+After TPM installs the plugin, run setup:
 
 ```sh
-~/.config/tmux/plugins/tmux-attention/scripts/install-hooks codex
-~/.config/tmux/plugins/tmux-attention/scripts/install-hooks claude
+~/.config/tmux/plugins/tmux-attention/scripts/setup codex
+```
+
+Setup installs agent hooks and adds a managed status snippet to `~/.tmux.conf`.
+Use `claude` or `all` instead of `codex` if you want those hooks:
+
+```sh
+~/.config/tmux/plugins/tmux-attention/scripts/setup claude
+~/.config/tmux/plugins/tmux-attention/scripts/setup all
 ```
 
 For Claude Code, use `/hooks` to verify the installed hooks. For Codex, use
-`/hooks` to review and trust the installed hooks before they can run.
-
-Or install hooks for both:
+`/hooks` to review and trust the installed hooks before they can run. Reload tmux
+after setup:
 
 ```sh
-~/.config/tmux/plugins/tmux-attention/scripts/install-hooks all
+tmux source-file ~/.tmux.conf
 ```
 
-Add the status helper wherever your theme renders window text:
+If you prefer to edit tmux config yourself, add the status helper wherever your
+theme renders window text:
 
 ```tmux
 set -g window-status-format "#{E:@tmux_attention_status}#I:#W"
@@ -79,6 +86,12 @@ Print the Catppuccin snippet:
 
 ```sh
 ~/.config/tmux/plugins/tmux-attention/scripts/tmux-attention catppuccin-format
+```
+
+Run setup with Catppuccin wiring:
+
+```sh
+~/.config/tmux/plugins/tmux-attention/scripts/setup all --status-line catppuccin
 ```
 
 ## Use
@@ -126,6 +139,14 @@ uses.
 | `install-hooks --status all` | Show installed state |
 | `install-hooks --print all` | Print JSON without editing files |
 | `install-hooks --uninstall all` | Remove managed hook entries |
+
+The simpler setup command wraps hook installation and status-line config:
+
+```sh
+~/.config/tmux/plugins/tmux-attention/scripts/setup all
+~/.config/tmux/plugins/tmux-attention/scripts/setup codex --status-line none
+~/.config/tmux/plugins/tmux-attention/scripts/setup all --status-line catppuccin
+```
 
 Claude Code users can verify installed hooks with `/hooks`. Codex users must
 review and trust installed hooks with `/hooks` before Codex will run them.
