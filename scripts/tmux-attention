@@ -5,10 +5,69 @@ usage() {
 Usage: tmux-attention [input|blocked|review|done|clear]
        tmux-attention status-format
        tmux-attention catppuccin-format
+       tmux-attention doctor
 
 Sets the tmux window option @agent_attention for the current tmux pane.
 Without an argument, defaults to input.
 EOF
+}
+
+doctor() {
+	script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+
+	check_ok() {
+		printf 'ok - %s\n' "$1"
+	}
+
+	check_warn() {
+		printf 'warn - %s\n' "$1"
+	}
+
+	if command -v tmux >/dev/null 2>&1; then
+		check_ok "tmux command is available"
+	else
+		check_warn "tmux command is not available"
+		return 1
+	fi
+
+	if [ -n "${TMUX_PANE:-}" ]; then
+		check_ok "running inside tmux"
+	else
+		check_warn "not running inside tmux"
+	fi
+
+	status="$(tmux show-option -gqv @tmux_attention_status 2>/dev/null || printf '')"
+	case "$status" in
+		*"@agent_attention"*)
+			check_ok "plugin status option is loaded"
+			;;
+		*)
+			check_warn "plugin status option is not loaded"
+			;;
+	esac
+
+	configured_status="$(
+		{
+			tmux show-option -gqv window-status-format 2>/dev/null || true
+			tmux show-option -gqv window-status-current-format 2>/dev/null || true
+			tmux show-option -gqv @catppuccin_window_text 2>/dev/null || true
+			tmux show-option -gqv @catppuccin_window_current_text 2>/dev/null || true
+		}
+	)"
+	case "$configured_status" in
+		*"@tmux_attention_status"*)
+			check_ok "tmux status line includes tmux-attention"
+			;;
+		*)
+			check_warn "tmux status line does not include tmux-attention"
+			;;
+	esac
+
+	if [ -x "$script_dir/install-hooks" ]; then
+		"$script_dir/install-hooks" --status all
+	else
+		check_warn "install-hooks helper is missing"
+	fi
 }
 
 state="${1:-input}"
@@ -28,6 +87,10 @@ EOF
 set -g @catppuccin_window_text "#{E:@tmux_attention_status}#W"
 set -g @catppuccin_window_current_text "#{E:@tmux_attention_status}#W"
 EOF
+		exit 0
+		;;
+	doctor|check)
+		doctor
 		exit 0
 		;;
 	-h|--help|help)

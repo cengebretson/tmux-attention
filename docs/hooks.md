@@ -8,13 +8,24 @@ The TPM plugin itself does not edit agent configuration files.
 After TPM installs the plugin, the simplest path is setup:
 
 ```sh
+~/.config/tmux/plugins/tmux-attention/scripts/setup
 ~/.config/tmux/plugins/tmux-attention/scripts/setup codex
 ~/.config/tmux/plugins/tmux-attention/scripts/setup claude
-~/.config/tmux/plugins/tmux-attention/scripts/setup all
 ```
 
-Setup installs hooks and writes a managed status snippet to `~/.tmux.conf`.
-Pass `--status-line none` if your tmux status is already configured manually.
+Setup defaults to Codex hooks, writes a managed status snippet to `~/.tmux.conf`,
+and accepts `--reload` to source the config immediately. Use `all` only when you
+want both Claude Code and Codex hooks.
+
+Common setup commands:
+
+```sh
+~/.config/tmux/plugins/tmux-attention/scripts/setup --reload
+~/.config/tmux/plugins/tmux-attention/scripts/setup claude --reload
+~/.config/tmux/plugins/tmux-attention/scripts/setup all --status-line catppuccin
+~/.config/tmux/plugins/tmux-attention/scripts/setup codex --status-line none
+~/.config/tmux/plugins/tmux-attention/scripts/setup all --uninstall
+```
 
 To manage only agent hooks, run:
 

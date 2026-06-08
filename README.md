@@ -24,14 +24,14 @@ set -g @plugin 'cengebretson/tmux-attention'
 
 Then press `prefix + I` to install plugins, or run TPM's install command.
 
-After TPM installs the plugin, run setup:
+After TPM installs the plugin, run setup. With no target, setup installs Codex
+hooks and writes a managed status snippet to `~/.tmux.conf`:
 
 ```sh
-~/.config/tmux/plugins/tmux-attention/scripts/setup codex
+~/.config/tmux/plugins/tmux-attention/scripts/setup --reload
 ```
 
-Setup installs agent hooks and adds a managed status snippet to `~/.tmux.conf`.
-Use `claude` or `all` instead of `codex` if you want those hooks:
+Use `claude` or `all` if you want different hooks:
 
 ```sh
 ~/.config/tmux/plugins/tmux-attention/scripts/setup claude
@@ -39,12 +39,7 @@ Use `claude` or `all` instead of `codex` if you want those hooks:
 ```
 
 For Claude Code, use `/hooks` to verify the installed hooks. For Codex, use
-`/hooks` to review and trust the installed hooks before they can run. Reload tmux
-after setup:
-
-```sh
-tmux source-file ~/.tmux.conf
-```
+`/hooks` to review and trust the installed hooks before they can run.
 
 If you prefer to edit tmux config yourself, add the status helper wherever your
 theme renders window text:
@@ -91,7 +86,7 @@ Print the Catppuccin snippet:
 Run setup with Catppuccin wiring:
 
 ```sh
-~/.config/tmux/plugins/tmux-attention/scripts/setup all --status-line catppuccin
+~/.config/tmux/plugins/tmux-attention/scripts/setup --status-line catppuccin --reload
 ```
 
 ## Use
@@ -107,6 +102,7 @@ tmux-attention done
 tmux-attention clear
 tmux-attention status-format
 tmux-attention catppuccin-format
+tmux-attention doctor
 ```
 
 After TPM installs the plugin, you can put the CLI on your `PATH`:
@@ -120,36 +116,17 @@ terminal bell.
 
 ## Agent Hooks
 
-Optional Claude Code and Codex hooks can call the same CLI:
+Optional Claude Code and Codex hooks can call the same CLI. Setup wraps hook
+installation and status-line config:
 
 ```sh
-~/.config/tmux/plugins/tmux-attention/scripts/install-hooks claude
-~/.config/tmux/plugins/tmux-attention/scripts/install-hooks codex
-~/.config/tmux/plugins/tmux-attention/scripts/install-hooks all
-```
-
-See [docs/hooks.md](docs/hooks.md) for the exact files and events the installer
-uses.
-
-| Command | Purpose |
-|---------|---------|
-| `install-hooks claude` | Install Claude Code hooks |
-| `install-hooks codex` | Install Codex hooks |
-| `install-hooks all` | Install both hook sets |
-| `install-hooks --status all` | Show installed state |
-| `install-hooks --print all` | Print JSON without editing files |
-| `install-hooks --uninstall all` | Remove managed hook entries |
-
-The simpler setup command wraps hook installation and status-line config:
-
-```sh
-~/.config/tmux/plugins/tmux-attention/scripts/setup all
 ~/.config/tmux/plugins/tmux-attention/scripts/setup codex --status-line none
 ~/.config/tmux/plugins/tmux-attention/scripts/setup all --status-line catppuccin
+~/.config/tmux/plugins/tmux-attention/scripts/setup all --uninstall
 ```
 
-Claude Code users can verify installed hooks with `/hooks`. Codex users must
-review and trust installed hooks with `/hooks` before Codex will run them.
+See [docs/hooks.md](docs/hooks.md) for exact hook files, events, and lower-level
+`install-hooks` commands.
 
 ## Test
 
@@ -169,10 +146,11 @@ options, user overrides, hook installation, and CLI state changes.
 Confirm the plugin is loaded:
 
 ```sh
-tmux show-option -gqv @tmux_attention_status
+~/.config/tmux/plugins/tmux-attention/scripts/tmux-attention doctor
 ```
 
-If that prints a status format, make sure your tmux theme includes:
+If the doctor says your status line is missing the plugin, make sure your tmux
+theme includes:
 
 ```tmux
 #{E:@tmux_attention_status}
@@ -190,7 +168,7 @@ You can print default snippets with:
 Check whether hooks are installed:
 
 ```sh
-~/.config/tmux/plugins/tmux-attention/scripts/install-hooks --status all
+~/.config/tmux/plugins/tmux-attention/scripts/tmux-attention doctor
 ```
 
 Claude Code's `/hooks` menu is useful for verifying hook configuration. Codex
@@ -228,6 +206,11 @@ ln -s ~/.config/tmux/plugins/tmux-attention/scripts/tmux-attention ~/.local/bin/
 - `reference/tmux-attention.fish` is kept only as the original local prototype.
 - Clear-on-view hooks are installed at tmux hook index `90`, so re-sourcing the
   plugin updates the hook instead of appending duplicates.
+
+## Related Plugins
+
+- [tmux-fzf-jump](https://github.com/cengebretson/tmux-fzf-jump) switches to any
+  tmux session, window, or pane with fzf and can display `tmux-attention` states.
 
 ## License
 

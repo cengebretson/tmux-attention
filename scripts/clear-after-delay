@@ -14,4 +14,5 @@ case "$delay" in
 		;;
 esac
 
-tmux run-shell -b "sleep $delay; tmux set-window-option -q -t '$target' @agent_attention ''"
+escaped_target="$(printf "%s" "$target" | sed "s/'/'\\\\''/g")"
+tmux run-shell -b "sleep $delay; tmux set-window-option -q -t '$escaped_target' @agent_attention ''"

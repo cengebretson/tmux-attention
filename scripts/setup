@@ -4,12 +4,12 @@ set -eu
 
 usage() {
 	cat <<'EOF'
-Usage: setup [claude|codex|all] [--status-line default|catppuccin|none] [--tmux-config PATH] [--no-hooks]
+Usage: setup [claude|codex|all] [--status-line default|catppuccin|none] [--tmux-config PATH] [--no-hooks] [--reload] [--uninstall]
 
-Installs tmux-attention agent hooks and writes a managed tmux status snippet.
+Installs or uninstalls tmux-attention agent hooks and a managed tmux status snippet.
 
 Defaults:
-  target: all
+  target: codex
   status line: default
   tmux config: ~/.tmux.conf
 
@@ -19,9 +19,11 @@ EOF
 }
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
-target="all"
+target="codex"
 status_line="default"
 install_hooks="yes"
+action="install"
+reload_tmux="no"
 tmux_config="${TMUX_ATTENTION_TMUX_CONF:-$HOME/.tmux.conf}"
 
 while [ "$#" -gt 0 ]; do
@@ -50,6 +52,14 @@ while [ "$#" -gt 0 ]; do
 			install_hooks="no"
 			shift
 			;;
+		--reload)
+			reload_tmux="yes"
+			shift
+			;;
+		--uninstall)
+			action="uninstall"
+			shift
+			;;
 		-h|--help|help)
 			usage
 			exit 0
@@ -61,6 +71,15 @@ while [ "$#" -gt 0 ]; do
 			;;
 	esac
 done
+
+case "$target" in
+	claude|codex|all)
+		;;
+	*)
+		printf 'setup: unknown target: %s\n' "$target" >&2
+		exit 2
+		;;
+esac
 
 case "$status_line" in
 	default|catppuccin|none)
@@ -112,21 +131,74 @@ write_status_snippet() {
 	printf 'tmux config: updated (%s)\n' "$config_path"
 }
 
+remove_status_snippet() {
+	config_path="$1"
+	tmp_path="$(mktemp "${TMPDIR:-/tmp}/tmux-attention-setup.XXXXXX")"
+	begin="# tmux-attention: begin"
+	end="# tmux-attention: end"
+
+	if [ ! -f "$config_path" ]; then
+		printf 'tmux config: no file to update (%s)\n' "$config_path"
+		rm -f "$tmp_path"
+		return
+	fi
+
+	stamp="$(date +%Y%m%d%H%M%S)"
+	cp "$config_path" "$config_path.bak.$stamp"
+	awk -v begin="$begin" -v end="$end" '
+		$0 == begin { skip = 1; next }
+		$0 == end { skip = 0; next }
+		!skip { print }
+	' "$config_path" >"$tmp_path"
+
+	mv "$tmp_path" "$config_path"
+	printf 'tmux config: removed managed block (%s)\n' "$config_path"
+}
+
+reload_config() {
+	config_path="$1"
+
+	if ! command -v tmux >/dev/null 2>&1; then
+		printf 'tmux reload: skipped (tmux not found)\n'
+		return
+	fi
+
+	tmux source-file "$config_path"
+	printf 'tmux reload: sourced %s\n' "$config_path"
+}
+
 if [ "$install_hooks" = "yes" ]; then
-	"$SCRIPT_DIR/install-hooks" "$target"
+	if [ "$action" = "uninstall" ]; then
+		"$SCRIPT_DIR/install-hooks" --uninstall "$target"
+	else
+		"$SCRIPT_DIR/install-hooks" "$target"
+	fi
 else
 	printf 'agent hooks: skipped\n'
 fi
 
 if [ "$status_line" != "none" ]; then
-	write_status_snippet "$tmux_config"
+	if [ "$action" = "uninstall" ]; then
+		remove_status_snippet "$tmux_config"
+	else
+		write_status_snippet "$tmux_config"
+	fi
 else
 	printf 'tmux config: skipped\n'
 fi
 
-cat <<'EOF'
+if [ "$reload_tmux" = "yes" ] && [ "$status_line" != "none" ]; then
+	reload_config "$tmux_config"
+fi
 
-Next:
-  1. Reload tmux config: tmux source-file ~/.tmux.conf
-  2. In Claude Code or Codex, open /hooks and verify/trust the installed hooks.
-EOF
+if [ "$action" = "uninstall" ]; then
+	printf '\nDone. Managed tmux-attention setup entries were removed.\n'
+else
+	printf '\nNext:\n'
+	if [ "$reload_tmux" = "no" ] && [ "$status_line" != "none" ]; then
+		printf '  1. Reload tmux config: tmux source-file %s\n' "$tmux_config"
+		printf '  2. In Claude Code or Codex, open /hooks and verify/trust the installed hooks.\n'
+	else
+		printf '  1. In Claude Code or Codex, open /hooks and verify/trust the installed hooks.\n'
+	fi
+fi

@@ -109,6 +109,18 @@ assert_eq "" "$(tmux_test show-window-option -t "$pane" -v @agent_attention)" "C
 assert_contains "window-status-format" "$("$ROOT_DIR/scripts/tmux-attention" status-format)" "CLI prints default status format"
 assert_contains "@catppuccin_window_text" "$("$ROOT_DIR/scripts/tmux-attention" catppuccin-format)" "CLI prints Catppuccin status format"
 
+tmux_test set-option -gq window-status-format "#{E:@tmux_attention_status}#I:#W"
+doctor_output="$(
+	TMUX_PANE="$pane" \
+	TMUX_ATTENTION_CLAUDE_SETTINGS="$TMP_BIN/doctor-claude.json" \
+	TMUX_ATTENTION_CODEX_HOOKS="$TMP_BIN/doctor-codex.json" \
+		"$ROOT_DIR/scripts/tmux-attention" doctor
+)"
+assert_contains "ok - tmux command is available" "$doctor_output" "doctor checks tmux availability"
+assert_contains "ok - plugin status option is loaded" "$doctor_output" "doctor checks plugin status option"
+assert_contains "ok - tmux status line includes tmux-attention" "$doctor_output" "doctor checks status-line wiring"
+assert_contains "codex: not installed" "$doctor_output" "doctor reports hook status"
+
 tmux_test set-option -gq @tmux_attention_icon_input "CUSTOM"
 tmux_test set-option -gq @tmux_attention_clear_delay "3"
 "$ROOT_DIR/tmux-attention.tmux"
@@ -193,14 +205,22 @@ SETUP_CODEX_HOOKS="$SETUP_TMP/codex/hooks.json"
 TMUX_ATTENTION_TMUX_CONF="$SETUP_TMUX_CONF" \
 TMUX_ATTENTION_CLAUDE_SETTINGS="$SETUP_CLAUDE_SETTINGS" \
 TMUX_ATTENTION_CODEX_HOOKS="$SETUP_CODEX_HOOKS" \
-	"$ROOT_DIR/scripts/setup" codex >/dev/null
+	"$ROOT_DIR/scripts/setup" >/dev/null
 
 assert_contains "window-status-format" "$(cat "$SETUP_TMUX_CONF")" "setup writes default tmux status snippet"
 assert_contains "codex: installed" "$(
 	TMUX_ATTENTION_CLAUDE_SETTINGS="$SETUP_CLAUDE_SETTINGS" \
 	TMUX_ATTENTION_CODEX_HOOKS="$SETUP_CODEX_HOOKS" \
 		"$ROOT_DIR/scripts/install-hooks" --status codex
-)" "setup installs selected agent hooks"
+)" "setup defaults to Codex hooks"
+
+custom_setup_output="$(
+	TMUX_ATTENTION_TMUX_CONF="$SETUP_TMUX_CONF" \
+	TMUX_ATTENTION_CLAUDE_SETTINGS="$SETUP_CLAUDE_SETTINGS" \
+	TMUX_ATTENTION_CODEX_HOOKS="$SETUP_CODEX_HOOKS" \
+		"$ROOT_DIR/scripts/setup" codex
+)"
+assert_contains "tmux source-file $SETUP_TMUX_CONF" "$custom_setup_output" "setup prints custom tmux reload path"
 
 TMUX_ATTENTION_TMUX_CONF="$SETUP_TMUX_CONF" \
 TMUX_ATTENTION_CLAUDE_SETTINGS="$SETUP_CLAUDE_SETTINGS" \
@@ -218,6 +238,35 @@ PY
 )"
 assert_eq "1" "$setup_block_count" "setup updates one managed tmux config block"
 assert_contains "@catppuccin_window_text" "$(cat "$SETUP_TMUX_CONF")" "setup can switch to Catppuccin status snippet"
+
+TMUX_ATTENTION_TMUX_CONF="$SETUP_TMUX_CONF" \
+TMUX_ATTENTION_CLAUDE_SETTINGS="$SETUP_CLAUDE_SETTINGS" \
+TMUX_ATTENTION_CODEX_HOOKS="$SETUP_CODEX_HOOKS" \
+	"$ROOT_DIR/scripts/setup" codex --uninstall >/dev/null
+
+assert_contains "codex: not installed" "$(
+	TMUX_ATTENTION_CLAUDE_SETTINGS="$SETUP_CLAUDE_SETTINGS" \
+	TMUX_ATTENTION_CODEX_HOOKS="$SETUP_CODEX_HOOKS" \
+		"$ROOT_DIR/scripts/install-hooks" --status codex
+)" "setup uninstall removes selected hooks"
+
+uninstall_block_count="$(
+	python3 - "$SETUP_TMUX_CONF" <<'PY'
+import sys
+from pathlib import Path
+
+text = Path(sys.argv[1]).read_text(encoding="utf-8")
+print(text.count("# tmux-attention: begin"))
+PY
+)"
+assert_eq "0" "$uninstall_block_count" "setup uninstall removes managed tmux config block"
+
+TMUX_ATTENTION_TMUX_CONF="$SETUP_TMUX_CONF" \
+TMUX_ATTENTION_CLAUDE_SETTINGS="$SETUP_CLAUDE_SETTINGS" \
+TMUX_ATTENTION_CODEX_HOOKS="$SETUP_CODEX_HOOKS" \
+	"$ROOT_DIR/scripts/setup" codex --reload >/dev/null
+
+assert_contains "@tmux_attention_status" "$(tmux_test show-option -gqv window-status-format)" "setup reload sources custom tmux config"
 
 TMUX_ATTENTION_TMUX_CONF="$SETUP_TMP/no-status.conf" \
 TMUX_ATTENTION_CLAUDE_SETTINGS="$SETUP_TMP/no-status-claude.json" \
