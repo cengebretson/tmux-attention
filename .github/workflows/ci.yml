@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
 
 jobs:
@@ -19,3 +20,18 @@ jobs:
 
       - name: Run tests
         run: tests/check.sh
+
+      - name: Check version matches tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          tag_version="${GITHUB_REF_NAME#v}"
+          script_version="$(sed -n 's/^TMUX_ATTENTION_VERSION="\(.*\)"/\1/p' scripts/tmux-attention)"
+          echo "tag: $tag_version  script: $script_version"
+          if [ "$tag_version" != "$script_version" ]; then
+            echo "::error::tag v$tag_version does not match TMUX_ATTENTION_VERSION ($script_version) in scripts/tmux-attention"
+            exit 1
+          fi
+          if ! grep -q "^## \[$tag_version\]" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no '## [$tag_version]' entry"
+            exit 1
+          fi
