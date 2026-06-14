@@ -119,6 +119,7 @@ doctor_output="$(
 assert_contains "ok - tmux command is available" "$doctor_output" "doctor checks tmux availability"
 assert_contains "ok - plugin status option is loaded" "$doctor_output" "doctor checks plugin status option"
 assert_contains "ok - tmux status line includes tmux-attention" "$doctor_output" "doctor checks status-line wiring"
+assert_contains "python3" "$doctor_output" "doctor reports python3 availability"
 assert_contains "codex: not installed" "$doctor_output" "doctor reports hook status"
 
 tmux_test set-option -gq @tmux_attention_icon_input "CUSTOM"
@@ -280,5 +281,60 @@ else
 fi
 
 rm -rf "$SETUP_TMP"
+
+# CLI subcommands and exit codes.
+assert_contains "tmux-attention" "$("$ROOT_DIR/scripts/tmux-attention" version)" "CLI version prints a version string"
+assert_contains "Usage:" "$("$ROOT_DIR/scripts/tmux-attention" --help)" "CLI help prints usage"
+
+if TMUX_PANE="$pane" "$ROOT_DIR/scripts/tmux-attention" bogus-state >/dev/null 2>&1; then
+	unknown_rc=0
+else
+	unknown_rc=$?
+fi
+assert_eq "2" "$unknown_rc" "CLI exits 2 on unknown state"
+
+bell_char="$(printf '\a')"
+bell_output="$(env -u TMUX_PANE "$ROOT_DIR/scripts/tmux-attention" input 2>/dev/null || true)"
+assert_eq "$bell_char" "$bell_output" "CLI rings the bell when run outside tmux"
+
+# Backup pruning keeps only the five newest backups.
+PRUNE_TMP="$(mktemp -d "${TMPDIR:-/tmp}/tmux-attention-prune.XXXXXX")"
+
+PRUNE_SETTINGS="$PRUNE_TMP/settings.json"
+printf '{}\n' >"$PRUNE_SETTINGS"
+seed=1
+while [ "$seed" -le 8 ]; do
+	printf '{}\n' >"$PRUNE_SETTINGS.bak.2000010100000$seed"
+	seed=$((seed + 1))
+done
+TMUX_ATTENTION_CLAUDE_SETTINGS="$PRUNE_SETTINGS" \
+TMUX_ATTENTION_CODEX_HOOKS="$PRUNE_TMP/codex.json" \
+	"$ROOT_DIR/scripts/install-hooks" claude >/dev/null
+install_backup_count=0
+for f in "$PRUNE_SETTINGS".bak.*; do
+	[ -e "$f" ] || continue
+	install_backup_count=$((install_backup_count + 1))
+done
+assert_eq "5" "$install_backup_count" "install-hooks prunes old backups to five"
+
+PRUNE_CONF="$PRUNE_TMP/prune.tmux.conf"
+printf '# existing\n' >"$PRUNE_CONF"
+seed=1
+while [ "$seed" -le 8 ]; do
+	printf '# old\n' >"$PRUNE_CONF.bak.2000010100000$seed"
+	seed=$((seed + 1))
+done
+TMUX_ATTENTION_TMUX_CONF="$PRUNE_CONF" \
+TMUX_ATTENTION_CLAUDE_SETTINGS="$PRUNE_TMP/prune-claude.json" \
+TMUX_ATTENTION_CODEX_HOOKS="$PRUNE_TMP/prune-codex.json" \
+	"$ROOT_DIR/scripts/setup" codex >/dev/null
+setup_backup_count=0
+for f in "$PRUNE_CONF".bak.*; do
+	[ -e "$f" ] || continue
+	setup_backup_count=$((setup_backup_count + 1))
+done
+assert_eq "5" "$setup_backup_count" "setup prunes old tmux config backups to five"
+
+rm -rf "$PRUNE_TMP"
 
 printf 'all checks passed\n'

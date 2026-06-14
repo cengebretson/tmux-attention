@@ -1,6 +1,15 @@
 # tmux-attention
 
+[![CI](https://github.com/cengebretson/tmux-attention/actions/workflows/ci.yml/badge.svg)](https://github.com/cengebretson/tmux-attention/actions/workflows/ci.yml)
+
 Generic attention marker for terminal agents running inside tmux.
+
+## Requirements
+
+- tmux
+- A POSIX `sh` (the CLI and TPM plugin need nothing more)
+- `python3` — only for installing/uninstalling agent hooks via `setup` or
+  `install-hooks`. The status marker and CLI work without it.
 
 The plugin has three parts:
 
@@ -103,6 +112,7 @@ tmux-attention clear
 tmux-attention status-format
 tmux-attention catppuccin-format
 tmux-attention doctor
+tmux-attention version
 ```
 
 After TPM installs the plugin, you can put the CLI on your `PATH`:
@@ -203,7 +213,6 @@ ln -s ~/.config/tmux/plugins/tmux-attention/scripts/tmux-attention ~/.local/bin/
 ## Notes
 
 - Core behavior is POSIX shell plus tmux; Fish is not required.
-- `reference/tmux-attention.fish` is kept only as the original local prototype.
 - Clear-on-view hooks are installed at tmux hook index `90`, so re-sourcing the
   plugin updates the hook instead of appending duplicates.
 

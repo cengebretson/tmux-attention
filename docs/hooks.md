@@ -3,6 +3,9 @@
 `tmux-attention` can install optional agent hooks that call the portable CLI.
 The TPM plugin itself does not edit agent configuration files.
 
+Hook installation requires `python3` (used to edit the JSON hook config files
+safely). The status marker and CLI do not need it.
+
 ## Install
 
 After TPM installs the plugin, the simplest path is setup:

@@ -1,11 +1,14 @@
 #!/bin/sh
 
+TMUX_ATTENTION_VERSION="0.1.0"
+
 usage() {
 	cat <<'EOF'
 Usage: tmux-attention [input|blocked|review|done|clear]
        tmux-attention status-format
        tmux-attention catppuccin-format
        tmux-attention doctor
+       tmux-attention version
 
 Sets the tmux window option @agent_attention for the current tmux pane.
 Without an argument, defaults to input.
@@ -63,10 +66,18 @@ doctor() {
 			;;
 	esac
 
-	if [ -x "$script_dir/install-hooks" ]; then
+	if command -v python3 >/dev/null 2>&1; then
+		check_ok "python3 is available (needed for hook install)"
+	else
+		check_warn "python3 is not available (hook install/status needs it)"
+	fi
+
+	if [ ! -x "$script_dir/install-hooks" ]; then
+		check_warn "install-hooks helper is missing"
+	elif command -v python3 >/dev/null 2>&1; then
 		"$script_dir/install-hooks" --status all
 	else
-		check_warn "install-hooks helper is missing"
+		check_warn "skipping hook status (python3 not available)"
 	fi
 }
 
@@ -91,6 +102,10 @@ EOF
 		;;
 	doctor|check)
 		doctor
+		exit 0
+		;;
+	version|--version|-v)
+		printf 'tmux-attention %s\n' "$TMUX_ATTENTION_VERSION"
 		exit 0
 		;;
 	-h|--help|help)

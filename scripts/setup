@@ -90,6 +90,29 @@ case "$status_line" in
 		;;
 esac
 
+prune_backups() {
+	config_path="$1"
+	keep=5
+
+	count=0
+	for f in "$config_path".bak.*; do
+		[ -e "$f" ] || return 0
+		count=$((count + 1))
+	done
+
+	remove=$((count - keep))
+	[ "$remove" -le 0 ] && return 0
+
+	i=0
+	for f in "$config_path".bak.*; do
+		[ -e "$f" ] || continue
+		i=$((i + 1))
+		if [ "$i" -le "$remove" ]; then
+			rm -f "$f"
+		fi
+	done
+}
+
 write_status_snippet() {
 	config_path="$1"
 	tmp_path="$(mktemp "${TMPDIR:-/tmp}/tmux-attention-setup.XXXXXX")"
@@ -101,6 +124,7 @@ write_status_snippet() {
 	if [ -f "$config_path" ]; then
 		stamp="$(date +%Y%m%d%H%M%S)"
 		cp "$config_path" "$config_path.bak.$stamp"
+		prune_backups "$config_path"
 		awk -v begin="$begin" -v end="$end" '
 			$0 == begin { skip = 1; next }
 			$0 == end { skip = 0; next }
@@ -145,6 +169,7 @@ remove_status_snippet() {
 
 	stamp="$(date +%Y%m%d%H%M%S)"
 	cp "$config_path" "$config_path.bak.$stamp"
+	prune_backups "$config_path"
 	awk -v begin="$begin" -v end="$end" '
 		$0 == begin { skip = 1; next }
 		$0 == end { skip = 0; next }
