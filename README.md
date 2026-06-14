@@ -147,7 +147,19 @@ tests/check.sh
 ```
 
 The check starts an isolated tmux server and verifies plugin loading, default
-options, user overrides, hook installation, and CLI state changes.
+options, user overrides, hook installation, and CLI state changes. CI runs the
+same checks plus ShellCheck on every push and pull request.
+
+## Releasing
+
+The version lives in three places that must agree, and CI enforces it on `v*`
+tags:
+
+1. `TMUX_ATTENTION_VERSION` in `scripts/tmux-attention`
+2. A matching `## [X.Y.Z]` entry in [CHANGELOG.md](CHANGELOG.md)
+3. The `vX.Y.Z` git tag
+
+Bump all three, then push with `git push origin main --follow-tags`.
 
 ## Troubleshooting
 
