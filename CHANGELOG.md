@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-06-15
+
 ### Changed
 
 - The version now lives in a `VERSION` file (read by `tmux-attention version`) instead of a hardcoded constant.
@@ -33,5 +35,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   server and a GitHub Actions CI workflow running ShellCheck and the tests.
 - Documentation: `README.md` and `docs/hooks.md`.
 
-[Unreleased]: https://github.com/cengebretson/tmux-attention/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/cengebretson/tmux-attention/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/cengebretson/tmux-attention/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/cengebretson/tmux-attention/releases/tag/v0.1.0
