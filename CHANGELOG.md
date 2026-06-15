@@ -6,6 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- The version now lives in a `VERSION` file (read by `tmux-attention version`) instead of a hardcoded constant.
+
+### Added
+
+- A tag-triggered release workflow that publishes a GitHub release from the changelog.
+
 ## [0.1.0] - 2026-06-14
 
 ### Added
