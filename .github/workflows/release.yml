@@ -1,0 +1,51 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y tmux
+
+      - name: Verify VERSION matches tag
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          file="$(cat VERSION)"
+          if [ "${tag}" != "${file}" ]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match VERSION (${file})" >&2
+            exit 1
+          fi
+
+      - name: Run tests
+        run: tests/check.sh
+
+      - name: Extract changelog notes
+        run: |
+          awk -v ver="${GITHUB_REF_NAME#v}" '
+            $0 ~ ("^## \\[" ver "\\]") { flag = 1; next }
+            /^## \[/ && flag { flag = 0 }
+            flag { print }
+          ' CHANGELOG.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            echo "No changelog section found for ${GITHUB_REF_NAME}" >&2
+            exit 1
+          fi
+          cat release-notes.md
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "${GITHUB_REF_NAME}" \
+            --notes-file release-notes.md

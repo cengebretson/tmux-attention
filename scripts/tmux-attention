@@ -1,6 +1,6 @@
 #!/bin/sh
 
-TMUX_ATTENTION_VERSION="0.1.0"
+TMUX_ATTENTION_VERSION="$(cat "$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)/VERSION" 2>/dev/null || echo unknown)"
 
 usage() {
 	cat <<'EOF'
