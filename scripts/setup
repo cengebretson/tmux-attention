@@ -13,6 +13,10 @@ Defaults:
   status line: default
   tmux config: ~/.tmux.conf
 
+Already have a custom theme (e.g. a custom @catppuccin_window_text)? Use
+--status-line none and add #{E:@tmux_attention_status} to your own window
+format. See the README "Marker Does Not Show" section.
+
 Environment overrides:
   TMUX_ATTENTION_TMUX_CONF
 EOF
@@ -220,10 +224,17 @@ if [ "$action" = "uninstall" ]; then
 	printf '\nDone. Managed tmux-attention setup entries were removed.\n'
 else
 	printf '\nNext:\n'
+	step=1
 	if [ "$reload_tmux" = "no" ] && [ "$status_line" != "none" ]; then
-		printf '  1. Reload tmux config: tmux source-file %s\n' "$tmux_config"
-		printf '  2. In Claude Code or Codex, open /hooks and verify/trust the installed hooks.\n'
-	else
-		printf '  1. In Claude Code or Codex, open /hooks and verify/trust the installed hooks.\n'
+		printf '  %d. Reload tmux config: tmux source-file %s\n' "$step" "$tmux_config"
+		step=$((step + 1))
 	fi
+	if [ "$install_hooks" = "yes" ]; then
+		printf '  %d. Restart Claude Code / Codex so the new hooks load. Agent hooks are read\n' "$step"
+		printf '     at session start, so they will NOT fire in your current session.\n'
+		step=$((step + 1))
+		printf '  %d. In Claude Code or Codex, open /hooks to verify/trust the installed hooks.\n' "$step"
+		step=$((step + 1))
+	fi
+	printf '  %d. Confirm the marker renders end to end: tmux-attention doctor --probe\n' "$step"
 fi

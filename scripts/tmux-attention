@@ -7,7 +7,7 @@ usage() {
 Usage: tmux-attention [input|blocked|review|done|clear]
        tmux-attention status-format
        tmux-attention catppuccin-format
-       tmux-attention doctor
+       tmux-attention doctor [--probe]
        tmux-attention version
 
 Sets the tmux window option @agent_attention for the current tmux pane.
@@ -16,6 +16,7 @@ EOF
 }
 
 doctor() {
+	probe="${1:-}"
 	script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 
 	check_ok() {
@@ -79,6 +80,25 @@ doctor() {
 	else
 		check_warn "skipping hook status (python3 not available)"
 	fi
+
+	if [ "$probe" = "--probe" ]; then
+		if [ -z "${TMUX_PANE:-}" ] || ! command -v tmux >/dev/null 2>&1; then
+			check_warn "marker probe skipped (not running inside tmux)"
+		else
+			previous="$(tmux show-options -w -t "$TMUX_PANE" -v @agent_attention 2>/dev/null || printf '')"
+			tmux set-window-option -q -t "$TMUX_PANE" @agent_attention review
+			rendered="$(tmux display-message -p -t "$TMUX_PANE" '#{E:@tmux_attention_status}' 2>/dev/null || printf '')"
+			tmux set-window-option -q -t "$TMUX_PANE" @agent_attention "$previous"
+			case "$rendered" in
+				"")
+					check_warn "marker probe rendered nothing (is #{E:@tmux_attention_status} in your status line?)"
+					;;
+				*)
+					check_ok "marker probe rendered a marker for the review state: $rendered"
+					;;
+			esac
+		fi
+	fi
 }
 
 state="${1:-input}"
@@ -101,7 +121,7 @@ EOF
 		exit 0
 		;;
 	doctor|check)
-		doctor
+		doctor "${2:-}"
 		exit 0
 		;;
 	version|--version|-v)

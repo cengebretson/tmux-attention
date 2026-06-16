@@ -6,6 +6,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `tmux-attention doctor --probe` sets, renders, and clears a test marker from
+  inside tmux to confirm the icon round-trips through the status line.
+
+### Changed
+
+- `setup` now reminds you to restart Claude Code / Codex (agent hooks load at
+  session start), suggests `doctor --probe` as a final check, and documents the
+  custom-theme path (`--status-line none` plus a manual
+  `#{E:@tmux_attention_status}`) in its `--help` output.
+
+### Fixed
+
+- Hook status detection (`install-hooks --status`, used by `doctor`) now matches
+  on the stable `tmux-attention:` marker comment instead of the full command
+  string, so it no longer falsely reports "not installed" when the plugin's
+  absolute CLI path differs from the one recorded in the config. This makes
+  status consistent with the already marker-based uninstall.
+
 ## [0.1.1] - 2026-06-15
 
 ### Changed

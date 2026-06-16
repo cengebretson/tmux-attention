@@ -112,6 +112,7 @@ tmux-attention clear
 tmux-attention status-format
 tmux-attention catppuccin-format
 tmux-attention doctor
+tmux-attention doctor --probe
 tmux-attention version
 ```
 
@@ -169,6 +170,13 @@ Confirm the plugin is loaded:
 
 ```sh
 ~/.config/tmux/plugins/tmux-attention/scripts/tmux-attention doctor
+```
+
+From inside tmux, add `--probe` to set, render, and clear a test marker so you
+can confirm the icon round-trips through your status line:
+
+```sh
+~/.config/tmux/plugins/tmux-attention/scripts/tmux-attention doctor --probe
 ```
 
 If the doctor says your status line is missing the plugin, make sure your tmux

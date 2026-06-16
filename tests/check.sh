@@ -151,6 +151,14 @@ codex_status="$(
 assert_contains "claude: installed" "$claude_status" "Claude hooks install into custom settings path"
 assert_contains "codex: installed" "$codex_status" "Codex hooks install into custom hooks path"
 
+relocated_status="$(
+	TMUX_ATTENTION_CLI="/some/other/location/tmux-attention" \
+	TMUX_ATTENTION_CLAUDE_SETTINGS="$CLAUDE_SETTINGS" \
+	TMUX_ATTENTION_CODEX_HOOKS="$CODEX_HOOKS" \
+		"$ROOT_DIR/scripts/install-hooks" --status claude
+)"
+assert_contains "claude: installed" "$relocated_status" "hook status ignores the CLI path"
+
 TMUX_ATTENTION_CLAUDE_SETTINGS="$CLAUDE_SETTINGS" \
 TMUX_ATTENTION_CODEX_HOOKS="$CODEX_HOOKS" \
 	"$ROOT_DIR/scripts/install-hooks" all >/dev/null

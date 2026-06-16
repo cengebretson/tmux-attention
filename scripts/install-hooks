@@ -236,16 +236,28 @@ def merge_hooks(config, managed_hooks):
     return config
 
 
+def marker_tail(command):
+    index = command.find(MARKER)
+    return command[index:] if index != -1 else None
+
+
 def has_managed_hooks(config, managed_hooks):
     hooks = config.get("hooks")
     if not isinstance(hooks, dict):
         return False
+    # Match on the stable marker comment (e.g. "tmux-attention:claude:notification")
+    # rather than the full command, so detection does not depend on the absolute
+    # CLI path. This keeps status consistent with marker-based uninstall.
     expected = [
-        handler["command"]
+        tail
         for groups in managed_hooks.values()
         for group in groups
         for handler in group["hooks"]
+        for tail in [marker_tail(handler["command"])]
+        if tail is not None
     ]
+    if not expected:
+        return False
     commands = [
         handler.get("command")
         for groups in hooks.values()
@@ -255,7 +267,8 @@ def has_managed_hooks(config, managed_hooks):
         for handler in group.get("hooks", [])
         if isinstance(handler, dict)
     ]
-    return all(item in commands for item in expected)
+    commands = [cmd for cmd in commands if isinstance(cmd, str)]
+    return all(any(tail in cmd for cmd in commands) for tail in expected)
 
 
 def print_snippet(name, managed_hooks):
