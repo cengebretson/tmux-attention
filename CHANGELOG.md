@@ -6,6 +6,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Installed hook commands now use a portable `"$HOME"`-relative CLI path when the
+  plugin lives under `$HOME`, instead of an absolute machine-specific path, so a
+  tracked `settings.json` / `hooks.json` works across machines. Both hook runners
+  execute the command through a shell (Claude Code via the user's shell, Codex
+  via `$SHELL -lc`), so `$HOME` expands at run time. Paths outside `$HOME` keep
+  their absolute form. Re-run `setup` (or `install-hooks`) to rewrite existing
+  entries.
+
 ## [0.2.0] - 2026-06-15
 
 ### Added

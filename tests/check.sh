@@ -159,6 +159,35 @@ relocated_status="$(
 )"
 assert_contains "claude: installed" "$relocated_status" "hook status ignores the CLI path"
 
+# A CLI under $HOME is emitted as a portable "$HOME"-relative command so the
+# generated hook config does not embed a machine-specific absolute path.
+portable_print="$(
+	TMUX_ATTENTION_CLI="$HOME/.config/tmux/plugins/tmux-attention/scripts/tmux-attention" \
+		"$ROOT_DIR/scripts/install-hooks" --print claude
+)"
+# The literal characters $HOME must survive into the command (expanded by the
+# hook runner's shell, not at install time); single quotes are intentional.
+# shellcheck disable=SC2016
+assert_contains '$HOME' "$portable_print" "managed command references \$HOME"
+assert_contains "/.config/tmux/plugins/tmux-attention/scripts/tmux-attention" \
+	"$portable_print" "managed command keeps the relative CLI path"
+case "$portable_print" in
+	*"$HOME/.config/tmux/plugins/tmux-attention"*)
+		fail "managed command embedded the literal home path"
+		;;
+	*)
+		pass "managed command does not embed the literal home path"
+		;;
+esac
+
+# A CLI outside $HOME keeps its absolute path (no false $HOME rewrite).
+absolute_print="$(
+	TMUX_ATTENTION_CLI="/opt/tmux-attention/tmux-attention" \
+		"$ROOT_DIR/scripts/install-hooks" --print claude
+)"
+assert_contains "/opt/tmux-attention/tmux-attention" \
+	"$absolute_print" "managed command keeps an absolute CLI path outside \$HOME"
+
 TMUX_ATTENTION_CLAUDE_SETTINGS="$CLAUDE_SETTINGS" \
 TMUX_ATTENTION_CODEX_HOOKS="$CODEX_HOOKS" \
 	"$ROOT_DIR/scripts/install-hooks" all >/dev/null

@@ -78,10 +78,23 @@ CLI = os.environ["TMUX_ATTENTION_CLI_PATH"]
 CLAUDE_PATH = Path(os.environ["TMUX_ATTENTION_CLAUDE_PATH"]).expanduser()
 CODEX_PATH = Path(os.environ["TMUX_ATTENTION_CODEX_PATH"]).expanduser()
 MARKER = "tmux-attention:"
+HOME = os.environ.get("HOME", "")
+
+
+def cli_token():
+    # Emit a $HOME-relative command when the CLI lives under $HOME, so the
+    # generated hook config is portable across machines (different usernames or
+    # home paths). Agent hook runners execute the command string through a shell
+    # — Claude Code via the user's shell, Codex via `$SHELL -lc "<command>"` —
+    # so "$HOME" expands at run time. Falls back to the absolute path otherwise.
+    if HOME and (CLI == HOME or CLI.startswith(HOME + os.sep)):
+        rel = CLI[len(HOME):].lstrip(os.sep)
+        return '"$HOME"/' + shlex.quote(rel)
+    return shlex.quote(CLI)
 
 
 def command(state, marker):
-    return f"{shlex.quote(CLI)} {state} # {MARKER}{marker}"
+    return f"{cli_token()} {state} # {MARKER}{marker}"
 
 
 CLAUDE_HOOKS = {
