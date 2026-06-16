@@ -6,6 +6,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Clear-on-view now also fires when a window is reached via `switch-client`
+  (e.g. jumping with tmux-fzf-jump), which previously left the marker stuck
+  because only `after-select-window` and `client-attached` were hooked. Added
+  `client-session-changed` (session switches) and `pane-focus-in` (any pane
+  focus; needs `focus-events on`) at the same stable index 90.
+- `clear-after-delay` no longer spawns a `sleep` when the target window has no
+  marker, so the now-frequent focus/select hooks stay cheap.
+
 ## [0.2.1] - 2026-06-15
 
 ### Fixed

@@ -6,6 +6,13 @@ if [ -z "$target" ] || ! command -v tmux >/dev/null 2>&1; then
 	exit 0
 fi
 
+# No marker on this window? Nothing to clear. This keeps the high-frequency
+# pane-focus-in / select-window hooks from spawning a sleep on every event.
+current="$(tmux show-options -wqv -t "$target" @agent_attention 2>/dev/null || printf '')"
+if [ -z "$current" ]; then
+	exit 0
+fi
+
 delay="$(tmux show-option -gqv @tmux_attention_clear_delay 2>/dev/null || printf '8')"
 
 case "$delay" in

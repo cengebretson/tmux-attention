@@ -94,6 +94,17 @@ assert_contains "@tmux_attention_icon_blocked" "$status" "status format uses con
 
 assert_contains "after-select-window[90]" "$(tmux_test show-hook -g after-select-window)" "after-select-window hook is installed at stable index"
 assert_contains "client-attached[90]" "$(tmux_test show-hook -g client-attached)" "client-attached hook is installed at stable index"
+# switch-client (e.g. tmux-fzf-jump) fires neither of the above; these cover it.
+assert_contains "client-session-changed[90]" "$(tmux_test show-hook -g client-session-changed)" "client-session-changed hook is installed at stable index"
+assert_contains "pane-focus-in[90]" "$(tmux_test show-hook -g pane-focus-in)" "pane-focus-in hook is installed at stable index"
+
+# clear-after-delay no-ops on a window with no marker (so frequent focus hooks
+# don't spawn a sleep). With a marker set, it schedules the clear.
+nomark_win="$(tmux_test display-message -p '#{window_id}')"
+tmux_test set-window-option -t "$nomark_win" @agent_attention ''
+nomark_rc=0
+"$ROOT_DIR/scripts/clear-after-delay" "$nomark_win" >/dev/null 2>&1 || nomark_rc=$?
+assert_eq "0" "$nomark_rc" "clear-after-delay exits cleanly when no marker is set"
 
 pane="$(tmux_test display-message -p '#{pane_id}')"
 
