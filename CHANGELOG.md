@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-06-15
+
 ### Added
 
 - `tmux-attention doctor --probe` sets, renders, and clears a test marker from
@@ -55,6 +57,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   server and a GitHub Actions CI workflow running ShellCheck and the tests.
 - Documentation: `README.md` and `docs/hooks.md`.
 
-[Unreleased]: https://github.com/cengebretson/tmux-attention/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/cengebretson/tmux-attention/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/cengebretson/tmux-attention/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/cengebretson/tmux-attention/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/cengebretson/tmux-attention/releases/tag/v0.1.0
