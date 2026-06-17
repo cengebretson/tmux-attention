@@ -108,6 +108,14 @@ assert_eq "0" "$nomark_rc" "clear-after-delay exits cleanly when no marker is se
 
 pane="$(tmux_test display-message -p '#{pane_id}')"
 
+tmux_test set-option -gq @tmux_attention_clear_delay "1"
+tmux_test set-window-option -t "$pane" @agent_attention input
+"$ROOT_DIR/scripts/clear-after-delay" "$pane"
+tmux_test set-window-option -t "$pane" @agent_attention blocked
+sleep 2
+assert_eq "blocked" "$(tmux_test show-window-option -t "$pane" -v @agent_attention)" "stale delayed clear does not erase a newer marker"
+tmux_test set-option -gqu @tmux_attention_clear_delay
+
 TMUX_PANE="$pane" "$ROOT_DIR/scripts/tmux-attention" blocked
 assert_eq "blocked" "$(tmux_test show-window-option -t "$pane" -v @agent_attention)" "CLI sets blocked state"
 

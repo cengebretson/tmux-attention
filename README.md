@@ -125,6 +125,10 @@ ln -s ~/.config/tmux/plugins/tmux-attention/scripts/tmux-attention ~/.local/bin/
 The command defaults to `input`. If it is run outside tmux, it falls back to a
 terminal bell.
 
+Markers are window-scoped: `tmux-attention` writes the `@agent_attention` window
+option for the window containing the current pane. If multiple agent panes share
+one tmux window, the most recent state wins for that window.
+
 ## Agent Hooks
 
 Optional Claude Code and Codex hooks can call the same CLI. Setup wraps hook
@@ -153,14 +157,14 @@ same checks plus ShellCheck on every push and pull request.
 
 ## Releasing
 
-The version lives in three places that must agree, and CI enforces it on `v*`
-tags:
+The version lives in `VERSION`, and CI enforces that `v*` tags match it:
 
-1. `TMUX_ATTENTION_VERSION` in `scripts/tmux-attention`
+1. `VERSION`
 2. A matching `## [X.Y.Z]` entry in [CHANGELOG.md](CHANGELOG.md)
 3. The `vX.Y.Z` git tag
 
-Bump all three, then push with `git push origin main --follow-tags`.
+Bump `VERSION`, promote the changelog entry, then push with
+`git push origin main --follow-tags`.
 
 ## Troubleshooting
 

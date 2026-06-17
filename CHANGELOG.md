@@ -6,6 +6,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Delayed clear timers now only clear the marker state they observed when they
+  were scheduled, so an older timer cannot erase a newer attention state.
+- README release guidance now points at the `VERSION` file instead of the old
+  hardcoded version constant, and documents that markers are window-scoped.
+
 ## [0.2.2] - 2026-06-16
 
 ### Fixed

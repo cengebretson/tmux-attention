@@ -21,5 +21,10 @@ case "$delay" in
 		;;
 esac
 
-escaped_target="$(printf "%s" "$target" | sed "s/'/'\\\\''/g")"
-tmux run-shell -b "sleep $delay; tmux set-window-option -q -t '$escaped_target' @agent_attention ''"
+quote_for_single_quotes() {
+	printf "%s" "$1" | sed "s/'/'\\\\''/g"
+}
+
+escaped_target="$(quote_for_single_quotes "$target")"
+escaped_current="$(quote_for_single_quotes "$current")"
+tmux run-shell -b "sleep $delay; current=\$(tmux show-options -wqv -t '$escaped_target' @agent_attention 2>/dev/null || printf ''); [ \"\$current\" = '$escaped_current' ] && tmux set-window-option -q -t '$escaped_target' @agent_attention ''"

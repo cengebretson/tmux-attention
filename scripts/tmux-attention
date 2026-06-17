@@ -10,7 +10,7 @@ Usage: tmux-attention [input|blocked|review|done|clear]
        tmux-attention doctor [--probe]
        tmux-attention version
 
-Sets the tmux window option @agent_attention for the current tmux pane.
+Sets the tmux window option @agent_attention for the window containing the current tmux pane.
 Without an argument, defaults to input.
 EOF
 }
