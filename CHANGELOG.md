@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-06-17
+
 ### Fixed
 
 - Delayed clear timers now only clear the marker state they observed when they
@@ -88,7 +90,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   server and a GitHub Actions CI workflow running ShellCheck and the tests.
 - Documentation: `README.md` and `docs/hooks.md`.
 
-[Unreleased]: https://github.com/cengebretson/tmux-attention/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/cengebretson/tmux-attention/compare/v0.2.3...HEAD
+[0.2.3]: https://github.com/cengebretson/tmux-attention/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/cengebretson/tmux-attention/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/cengebretson/tmux-attention/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/cengebretson/tmux-attention/compare/v0.1.1...v0.2.0
