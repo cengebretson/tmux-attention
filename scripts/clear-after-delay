@@ -27,4 +27,4 @@ quote_for_single_quotes() {
 
 escaped_target="$(quote_for_single_quotes "$target")"
 escaped_current="$(quote_for_single_quotes "$current")"
-tmux run-shell -b "sleep $delay; current=\$(tmux show-options -wqv -t '$escaped_target' @agent_attention 2>/dev/null || printf ''); [ \"\$current\" = '$escaped_current' ] && tmux set-window-option -q -t '$escaped_target' @agent_attention ''"
+tmux run-shell -b "sleep $delay; current=\$(tmux show-options -wqv -t '$escaped_target' @agent_attention 2>/dev/null || printf ''); if [ \"\$current\" = '$escaped_current' ]; then tmux set-window-option -q -t '$escaped_target' @agent_attention '' || true; fi"

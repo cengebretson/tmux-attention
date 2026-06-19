@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Delayed clear timers no longer emit a tmux `returned 1` message when the
+  marker changed before the timer fired.
+
 ## [0.2.3] - 2026-06-17
 
 ### Fixed

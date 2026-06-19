@@ -52,6 +52,22 @@ assert_contains() {
 	esac
 }
 
+assert_not_contains() {
+	needle="$1"
+	haystack="$2"
+	label="$3"
+
+	case "$haystack" in
+		*"$needle"*)
+			printf 'unexpected: %s\nin:         %s\n' "$needle" "$haystack" >&2
+			fail "$label"
+			;;
+		*)
+			pass "$label"
+			;;
+	esac
+}
+
 tmux_test() {
 	"$REAL_TMUX" -S "$SOCKET_PATH" "$@"
 }
@@ -114,6 +130,7 @@ tmux_test set-window-option -t "$pane" @agent_attention input
 tmux_test set-window-option -t "$pane" @agent_attention blocked
 sleep 2
 assert_eq "blocked" "$(tmux_test show-window-option -t "$pane" -v @agent_attention)" "stale delayed clear does not erase a newer marker"
+assert_not_contains "returned 1" "$(tmux_test show-messages)" "stale delayed clear does not emit a tmux command failure"
 tmux_test set-option -gqu @tmux_attention_clear_delay
 
 TMUX_PANE="$pane" "$ROOT_DIR/scripts/tmux-attention" blocked
