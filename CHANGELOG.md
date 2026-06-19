@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-06-18
+
 ### Fixed
 
 - Delayed clear timers no longer emit a tmux `returned 1` message when the
@@ -95,7 +97,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   server and a GitHub Actions CI workflow running ShellCheck and the tests.
 - Documentation: `README.md` and `docs/hooks.md`.
 
-[Unreleased]: https://github.com/cengebretson/tmux-attention/compare/v0.2.3...HEAD
+[Unreleased]: https://github.com/cengebretson/tmux-attention/compare/v0.2.4...HEAD
+[0.2.4]: https://github.com/cengebretson/tmux-attention/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/cengebretson/tmux-attention/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/cengebretson/tmux-attention/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/cengebretson/tmux-attention/compare/v0.2.0...v0.2.1
