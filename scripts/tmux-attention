@@ -4,14 +4,20 @@ TMUX_ATTENTION_VERSION="$(cat "$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)/V
 
 usage() {
 	cat <<'EOF'
-Usage: tmux-attention [input|blocked|review|done|clear]
+Usage: tmux-attention [input|blocked|review|done|clear] [--target <tmux-target>]
+       tmux-attention [--target <tmux-target>] [input|blocked|review|done|clear]
+       tmux-attention event <event> [--target <tmux-target>]
+       tmux-attention get [--target <tmux-target>] [--format text|json]
+       tmux-attention list [--session <session>] [--format text|json]
        tmux-attention status-format
        tmux-attention catppuccin-format
        tmux-attention doctor [--probe]
        tmux-attention version
 
-Sets the tmux window option @agent_attention for the window containing the current tmux pane.
-Without an argument, defaults to input.
+Sets the tmux window option @agent_attention for the target tmux window.
+Without --target, uses the current tmux pane. Without a state, defaults to input.
+Event names include approval_required, task_complete, session_started,
+tool_running, and tool_finished.
 EOF
 }
 
@@ -101,10 +107,291 @@ doctor() {
 	fi
 }
 
-state="${1:-input}"
+json_escape() {
+	awk -v value="$1" 'BEGIN {
+		gsub(/\\/, "\\\\", value)
+		gsub(/"/, "\\\"", value)
+		gsub(/\t/, "\\t", value)
+		gsub(/\r/, "\\r", value)
+		gsub(/\n/, "\\n", value)
+		printf "%s", value
+	}'
+}
+
+json_value() {
+	if [ -n "$1" ]; then
+		printf '"%s"' "$(json_escape "$1")"
+	else
+		printf 'null'
+	fi
+}
+
+resolve_target() {
+	if [ -n "$target" ]; then
+		return 0
+	fi
+
+	target="${TMUX_PANE:-}"
+}
+
+require_target() {
+	resolve_target
+	if [ -n "$target" ]; then
+		return 0
+	fi
+
+	printf 'tmux-attention: --target or TMUX_PANE is required for %s\n' "$state" >&2
+	return 1
+}
+
+set_attention() {
+	attention_state="$1"
+
+	case "$attention_state" in
+		clear|none|off)
+			tmux set-window-option -q -t "$target" @agent_attention ''
+			tmux set-window-option -q -t "$target" @agent_attention_source ''
+			tmux set-window-option -q -t "$target" @agent_attention_reason ''
+			tmux set-window-option -q -t "$target" @agent_attention_updated_at ''
+			return 0
+			;;
+	esac
+
+	tmux set-window-option -q -t "$target" @agent_attention "$attention_state"
+	tmux set-window-option -q -t "$target" @agent_attention_source "$source"
+	tmux set-window-option -q -t "$target" @agent_attention_reason "$reason"
+	tmux set-window-option -q -t "$target" @agent_attention_updated_at "$(date +%s)"
+}
+
+get_option() {
+	tmux show-options -wqv -t "$target" "$1" 2>/dev/null || printf ''
+}
+
+print_get() {
+	if ! require_target; then
+		return 1
+	fi
+
+	window_id="$(tmux display-message -p -t "$target" '#{window_id}' 2>/dev/null)" || {
+		printf 'tmux-attention: invalid target: %s\n' "$target" >&2
+		return 1
+	}
+	state_value="$(get_option @agent_attention)"
+	source_value="$(get_option @agent_attention_source || printf '')"
+	reason_value="$(get_option @agent_attention_reason || printf '')"
+	updated_at_value="$(get_option @agent_attention_updated_at || printf '')"
+
+	case "$format" in
+		text)
+			if [ -n "$state_value" ]; then
+				printf '%s\n' "$state_value"
+			fi
+			;;
+		json)
+			printf '{"scope":"window","target":'
+			json_value "$window_id"
+			printf ',"state":'
+			json_value "$state_value"
+			printf ',"source":'
+			json_value "$source_value"
+			printf ',"reason":'
+			json_value "$reason_value"
+			printf ',"updated_at":'
+			json_value "$updated_at_value"
+			printf '}\n'
+			;;
+	esac
+}
+
+print_list() {
+	tab="$(printf '\t')"
+	if [ -n "$session" ]; then
+		list_output="$(tmux list-windows -t "$session" -F "#{session_name}${tab}#{window_index}${tab}#{window_id}${tab}#{window_name}${tab}#{@agent_attention}${tab}#{@agent_attention_source}${tab}#{@agent_attention_reason}${tab}#{@agent_attention_updated_at}" 2>/dev/null)" || {
+			printf 'tmux-attention: invalid session: %s\n' "$session" >&2
+			return 1
+		}
+	else
+		list_output="$(tmux list-windows -a -F "#{session_name}${tab}#{window_index}${tab}#{window_id}${tab}#{window_name}${tab}#{@agent_attention}${tab}#{@agent_attention_source}${tab}#{@agent_attention_reason}${tab}#{@agent_attention_updated_at}" 2>/dev/null)" || return 1
+	fi
+
+	case "$format" in
+		text)
+			printf '%s\n' "$list_output" | while IFS="$(printf '\t')" read -r session_name window_index _window_id _window_name state_value _source_value _reason_value _updated_at_value; do
+				if [ -n "$state_value" ]; then
+					printf '%s:%s %s\n' "$session_name" "$window_index" "$state_value"
+				fi
+			done
+			;;
+		json)
+			printf '['
+			first="true"
+			printf '%s\n' "$list_output" | while IFS="$(printf '\t')" read -r session_name window_index window_id window_name state_value source_value reason_value updated_at_value; do
+				if [ -z "$state_value" ]; then
+					continue
+				fi
+				if [ "$first" = "true" ]; then
+					first="false"
+				else
+					printf ','
+				fi
+				printf '{"session":'
+				json_value "$session_name"
+				printf ',"window_index":'
+				json_value "$window_index"
+				printf ',"window_id":'
+				json_value "$window_id"
+				printf ',"window_name":'
+				json_value "$window_name"
+				printf ',"state":'
+				json_value "$state_value"
+				printf ',"source":'
+				json_value "$source_value"
+				printf ',"reason":'
+				json_value "$reason_value"
+				printf ',"updated_at":'
+				json_value "$updated_at_value"
+				printf '}'
+			done
+			printf ']\n'
+			;;
+	esac
+}
+
+state="input"
+state_set="false"
+target=""
+doctor_probe=""
+format="text"
+session=""
+source=""
+reason=""
+event_type=""
+
+while [ "$#" -gt 0 ]; do
+	case "$1" in
+		--target|-t)
+			if [ "$#" -lt 2 ]; then
+				printf 'tmux-attention: --target requires a tmux target\n' >&2
+				usage >&2
+				exit 2
+			fi
+			target="$2"
+			shift 2
+			;;
+		--target=*)
+			target="${1#--target=}"
+			if [ -z "$target" ]; then
+				printf 'tmux-attention: --target requires a tmux target\n' >&2
+				usage >&2
+				exit 2
+			fi
+			shift
+			;;
+		--format)
+			if [ "$#" -lt 2 ]; then
+				printf 'tmux-attention: --format requires text or json\n' >&2
+				usage >&2
+				exit 2
+			fi
+			format="$2"
+			shift 2
+			;;
+		--format=*)
+			format="${1#--format=}"
+			shift
+			;;
+		--session)
+			if [ "$#" -lt 2 ]; then
+				printf 'tmux-attention: --session requires a tmux session\n' >&2
+				usage >&2
+				exit 2
+			fi
+			session="$2"
+			shift 2
+			;;
+		--session=*)
+			session="${1#--session=}"
+			shift
+			;;
+		--source)
+			if [ "$#" -lt 2 ]; then
+				printf 'tmux-attention: --source requires a value\n' >&2
+				usage >&2
+				exit 2
+			fi
+			source="$2"
+			shift 2
+			;;
+		--source=*)
+			source="${1#--source=}"
+			shift
+			;;
+		--reason)
+			if [ "$#" -lt 2 ]; then
+				printf 'tmux-attention: --reason requires a value\n' >&2
+				usage >&2
+				exit 2
+			fi
+			reason="$2"
+			shift 2
+			;;
+		--reason=*)
+			reason="${1#--reason=}"
+			shift
+			;;
+		--probe)
+			case "$state" in
+				doctor|check)
+					doctor_probe="--probe"
+					shift
+					;;
+				*)
+					printf 'tmux-attention: unexpected argument: %s\n' "$1" >&2
+					usage >&2
+					exit 2
+					;;
+			esac
+			;;
+		*)
+			if [ "$state_set" = "true" ]; then
+				if [ "$state" = "event" ] && [ -z "$event_type" ]; then
+					event_type="$1"
+					shift
+					continue
+				else
+					printf 'tmux-attention: unexpected argument: %s\n' "$1" >&2
+					usage >&2
+					exit 2
+				fi
+			fi
+			state="$1"
+			state_set="true"
+			shift
+			;;
+	esac
+done
+
+case "$format" in
+	text|json)
+		;;
+	*)
+		printf 'tmux-attention: unknown format: %s\n' "$format" >&2
+		usage >&2
+		exit 2
+		;;
+esac
 
 case "$state" in
 	input|blocked|review|done|clear|none|off)
+		;;
+	event)
+		if [ -z "$event_type" ]; then
+			printf 'tmux-attention: event requires an event name\n' >&2
+			usage >&2
+			exit 2
+		fi
+		;;
+	get|list)
 		;;
 	status-format|format)
 		cat <<'EOF'
@@ -121,7 +408,7 @@ EOF
 		exit 0
 		;;
 	doctor|check)
-		doctor "${2:-}"
+		doctor "$doctor_probe"
 		exit 0
 		;;
 	version|--version|-v)
@@ -139,9 +426,57 @@ EOF
 		;;
 esac
 
-if [ -z "${TMUX_PANE:-}" ]; then
-	printf '\a'
-	exit 0
+case "$state" in
+	get)
+		if ! command -v tmux >/dev/null 2>&1; then
+			printf 'tmux-attention: tmux command is not available\n' >&2
+			exit 1
+		fi
+		print_get
+		exit $?
+		;;
+	list)
+		if ! command -v tmux >/dev/null 2>&1; then
+			printf 'tmux-attention: tmux command is not available\n' >&2
+			exit 1
+		fi
+		print_list
+		exit $?
+		;;
+esac
+
+if [ "$state" = "event" ]; then
+	case "$event_type" in
+		approval_required)
+			state="input"
+			: "${reason:=approval_required}"
+			;;
+		task_complete)
+			state="done"
+			: "${reason:=task_complete}"
+			;;
+		session_started)
+			state="clear"
+			: "${reason:=session_started}"
+			;;
+		tool_running|tool_finished)
+			exit 0
+			;;
+		blocked|stop_failure|hook_failure)
+			state="blocked"
+			: "${reason:=$event_type}"
+			;;
+		review_required|needs_review)
+			state="review"
+			: "${reason:=$event_type}"
+			;;
+		*)
+			printf 'tmux-attention: unknown event: %s\n' "$event_type" >&2
+			usage >&2
+			exit 2
+			;;
+	esac
+	: "${source:=event}"
 fi
 
 if ! command -v tmux >/dev/null 2>&1; then
@@ -149,16 +484,20 @@ if ! command -v tmux >/dev/null 2>&1; then
 	exit 0
 fi
 
-target="$TMUX_PANE"
+resolve_target
+
+if [ -z "$target" ]; then
+	printf '\a'
+	exit 0
+fi
+
+set_attention "$state"
 
 case "$state" in
 	clear|none|off)
-		tmux set-window-option -q -t "$target" @agent_attention ''
 		exit 0
 		;;
 esac
-
-tmux set-window-option -q -t "$target" @agent_attention "$state"
 
 attached="$(tmux display-message -p -t "$target" '#{session_attached}' 2>/dev/null || printf '0')"
 active="$(tmux display-message -p -t "$target" '#{window_active}' 2>/dev/null || printf '0')"

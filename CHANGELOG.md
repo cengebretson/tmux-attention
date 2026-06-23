@@ -6,6 +6,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `tmux-attention` state writes now accept `--target` / `-t` to mark another
+  tmux pane or window without relying on `TMUX_PANE`.
+- Added `tmux-attention get` and `tmux-attention list` with text and JSON output
+  for scripts, pickers, and dashboards.
+- Added optional marker metadata via `--source` and `--reason`, stored alongside
+  `@agent_attention` as window options with an update timestamp.
+- Added `tmux-attention event <event>` as a small adapter for normalized event
+  streams such as `approval_required`, `task_complete`, and `session_started`.
+
 ## [0.2.4] - 2026-06-18
 
 ### Fixed

@@ -106,6 +106,13 @@ The portable CLI is `scripts/tmux-attention`.
 tmux-attention
 tmux-attention input
 tmux-attention blocked
+tmux-attention blocked --target <tmux-target>
+tmux-attention blocked --source moshi --reason approval_required
+tmux-attention --target <tmux-target> clear
+tmux-attention event approval_required --target <tmux-target>
+tmux-attention get --target <tmux-target>
+tmux-attention get --target <tmux-target> --format json
+tmux-attention list --format json
 tmux-attention review
 tmux-attention done
 tmux-attention clear
@@ -122,12 +129,49 @@ After TPM installs the plugin, you can put the CLI on your `PATH`:
 ln -s ~/.config/tmux/plugins/tmux-attention/scripts/tmux-attention ~/.local/bin/tmux-attention
 ```
 
-The command defaults to `input`. If it is run outside tmux, it falls back to a
+The command defaults to `input`. Without `--target`, it uses the current tmux
+pane. If it is run outside tmux without an explicit target, it falls back to a
 terminal bell.
 
 Markers are window-scoped: `tmux-attention` writes the `@agent_attention` window
-option for the window containing the current pane. If multiple agent panes share
-one tmux window, the most recent state wins for that window.
+option for the target window. `--target` accepts the same tmux targets as
+`set-window-option -t`, such as a pane id (`%12`) or window target
+(`session:window`). If multiple agent panes share one tmux window, the most
+recent state wins for that window.
+
+Writes can include optional metadata:
+
+```sh
+tmux-attention input --source moshi --reason approval_required
+```
+
+Metadata is stored in separate window options:
+
+| Option | Meaning |
+|--------|---------|
+| `@agent_attention_source` | integration or tool that set the marker |
+| `@agent_attention_reason` | event or reason that produced the marker |
+| `@agent_attention_updated_at` | Unix timestamp for the last marker write |
+
+Use `get` or `list` for scripts and pickers:
+
+```sh
+tmux-attention get --target %12
+tmux-attention get --target %12 --format json
+tmux-attention list --session work --format json
+```
+
+External event systems can use a small adapter command:
+
+```sh
+tmux-attention event approval_required --target %12 --source moshi
+tmux-attention event task_complete --target %12 --source moshi
+tmux-attention event session_started --target %12 --source moshi
+```
+
+`approval_required` maps to `input`, `task_complete` maps to `done`, and
+`session_started` maps to `clear`. `tool_running` and `tool_finished` are
+accepted as no-ops so noisy event streams can call the adapter safely.
 
 ## Agent Hooks
 
@@ -142,6 +186,9 @@ installation and status-line config:
 
 See [docs/hooks.md](docs/hooks.md) for exact hook files, events, and lower-level
 `install-hooks` commands.
+
+The installed hook commands are unchanged by `get`, `list`, metadata, or event
+adapter support. Existing hooks continue to call the plain state commands.
 
 ## Test
 

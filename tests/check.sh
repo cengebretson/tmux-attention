@@ -123,6 +123,7 @@ nomark_rc=0
 assert_eq "0" "$nomark_rc" "clear-after-delay exits cleanly when no marker is set"
 
 pane="$(tmux_test display-message -p '#{pane_id}')"
+target_pane="$(tmux_test new-window -d -P -F '#{pane_id}' -n target)"
 
 tmux_test set-option -gq @tmux_attention_clear_delay "1"
 tmux_test set-window-option -t "$pane" @agent_attention input
@@ -142,6 +143,43 @@ assert_eq "review" "$(tmux_test show-window-option -t "$pane" -v @agent_attentio
 TMUX_PANE="$pane" "$ROOT_DIR/scripts/tmux-attention" clear
 assert_eq "" "$(tmux_test show-window-option -t "$pane" -v @agent_attention)" "CLI clears state"
 
+TMUX_PANE= "$ROOT_DIR/scripts/tmux-attention" blocked --target "$target_pane"
+assert_eq "blocked" "$(tmux_test show-window-option -t "$target_pane" -v @agent_attention)" "CLI sets state on explicit target without TMUX_PANE"
+
+"$ROOT_DIR/scripts/tmux-attention" --target "$target_pane" clear
+assert_eq "" "$(tmux_test show-window-option -t "$target_pane" -v @agent_attention)" "CLI clears explicit target before state argument"
+
+"$ROOT_DIR/scripts/tmux-attention" blocked --target "$target_pane" --source moshi --reason approval_required
+assert_eq "blocked" "$("$ROOT_DIR/scripts/tmux-attention" get --target "$target_pane")" "CLI gets explicit target state"
+
+target_json="$("$ROOT_DIR/scripts/tmux-attention" get --target "$target_pane" --format json)"
+assert_contains '"state":"blocked"' "$target_json" "CLI JSON get includes state"
+assert_contains '"source":"moshi"' "$target_json" "CLI JSON get includes source metadata"
+assert_contains '"reason":"approval_required"' "$target_json" "CLI JSON get includes reason metadata"
+assert_contains '"updated_at":"' "$target_json" "CLI JSON get includes updated_at metadata"
+
+list_text="$("$ROOT_DIR/scripts/tmux-attention" list --session tmux-attention-test)"
+assert_contains " blocked" "$list_text" "CLI list includes marked windows"
+
+list_json="$("$ROOT_DIR/scripts/tmux-attention" list --session tmux-attention-test --format json)"
+assert_contains '"window_name":"target"' "$list_json" "CLI JSON list includes window name"
+assert_contains '"source":"moshi"' "$list_json" "CLI JSON list includes metadata"
+
+"$ROOT_DIR/scripts/tmux-attention" event approval_required --target "$target_pane" --source moshi
+assert_eq "input" "$(tmux_test show-window-option -t "$target_pane" -v @agent_attention)" "CLI event maps approval_required to input"
+event_json="$("$ROOT_DIR/scripts/tmux-attention" get --target "$target_pane" --format json)"
+assert_contains '"reason":"approval_required"' "$event_json" "CLI event stores default reason"
+
+"$ROOT_DIR/scripts/tmux-attention" event session_started --target "$target_pane" --source moshi
+assert_eq "" "$(tmux_test show-window-option -t "$target_pane" -v @agent_attention)" "CLI event maps session_started to clear"
+cleared_json="$("$ROOT_DIR/scripts/tmux-attention" get --target "$target_pane" --format json)"
+assert_contains '"source":null' "$cleared_json" "CLI clear removes source metadata"
+assert_contains '"reason":null' "$cleared_json" "CLI clear removes reason metadata"
+
+missing_target_rc=0
+"$ROOT_DIR/scripts/tmux-attention" --target >/dev/null 2>&1 || missing_target_rc=$?
+assert_eq "2" "$missing_target_rc" "CLI rejects missing target argument"
+
 assert_contains "window-status-format" "$("$ROOT_DIR/scripts/tmux-attention" status-format)" "CLI prints default status format"
 assert_contains "@catppuccin_window_text" "$("$ROOT_DIR/scripts/tmux-attention" catppuccin-format)" "CLI prints Catppuccin status format"
 
@@ -157,6 +195,14 @@ assert_contains "ok - plugin status option is loaded" "$doctor_output" "doctor c
 assert_contains "ok - tmux status line includes tmux-attention" "$doctor_output" "doctor checks status-line wiring"
 assert_contains "python3" "$doctor_output" "doctor reports python3 availability"
 assert_contains "codex: not installed" "$doctor_output" "doctor reports hook status"
+
+doctor_probe_output="$(
+	TMUX_PANE="$pane" \
+	TMUX_ATTENTION_CLAUDE_SETTINGS="$TMP_BIN/doctor-probe-claude.json" \
+	TMUX_ATTENTION_CODEX_HOOKS="$TMP_BIN/doctor-probe-codex.json" \
+		"$ROOT_DIR/scripts/tmux-attention" doctor --probe
+)"
+assert_contains "marker probe rendered a marker" "$doctor_probe_output" "doctor probe still accepts --probe"
 
 tmux_test set-option -gq @tmux_attention_icon_input "CUSTOM"
 tmux_test set-option -gq @tmux_attention_clear_delay "3"
