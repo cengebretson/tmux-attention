@@ -134,6 +134,18 @@ assert_eq "blocked" "$(tmux_test show-window-option -t "$pane" -v @agent_attenti
 assert_not_contains "returned 1" "$(tmux_test show-messages)" "stale delayed clear does not emit a tmux command failure"
 tmux_test set-option -gqu @tmux_attention_clear_delay
 
+# With clear-on-view disabled, a set marker must persist: clear-after-delay
+# (used by both the focus hooks and the CLI's post-set path) should no-op.
+tmux_test set-option -gq @tmux_attention_clear_on_view "off"
+tmux_test set-option -gq @tmux_attention_clear_delay "1"
+tmux_test set-window-option -t "$pane" @agent_attention review
+"$ROOT_DIR/scripts/clear-after-delay" "$pane"
+sleep 2
+assert_eq "review" "$(tmux_test show-window-option -t "$pane" -v @agent_attention)" "clear-on-view off keeps the marker in place"
+tmux_test set-window-option -t "$pane" @agent_attention ''
+tmux_test set-option -gqu @tmux_attention_clear_delay
+tmux_test set-option -gq @tmux_attention_clear_on_view "on"
+
 TMUX_PANE="$pane" "$ROOT_DIR/scripts/tmux-attention" blocked
 assert_eq "blocked" "$(tmux_test show-window-option -t "$pane" -v @agent_attention)" "CLI sets blocked state"
 

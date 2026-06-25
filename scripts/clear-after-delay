@@ -13,6 +13,14 @@ if [ -z "$current" ]; then
 	exit 0
 fi
 
+# Respect the global opt-out. When clear-on-view is disabled the marker should
+# persist until it is cleared explicitly, so neither the focus/select hooks nor
+# the CLI's post-set auto-clear on the active window should schedule a clear.
+clear_on_view="$(tmux show-option -gqv @tmux_attention_clear_on_view 2>/dev/null || printf 'on')"
+if [ "$clear_on_view" != "on" ]; then
+	exit 0
+fi
+
 delay="$(tmux show-option -gqv @tmux_attention_clear_delay 2>/dev/null || printf '8')"
 
 case "$delay" in

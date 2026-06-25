@@ -6,6 +6,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- `@tmux_attention_clear_on_view off` now also suppresses the CLI's post-set
+  auto-clear on the active window, so a marker set on the window you are viewing
+  persists until cleared explicitly. Previously only the focus/select hooks
+  honored the opt-out.
+
 ## [0.3.0] - 2026-06-23
 
 ### Added
