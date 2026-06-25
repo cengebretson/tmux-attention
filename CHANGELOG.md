@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-06-24
+
 ### Fixed
 
 - `@tmux_attention_clear_on_view off` now also suppresses the CLI's post-set
@@ -117,7 +119,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   server and a GitHub Actions CI workflow running ShellCheck and the tests.
 - Documentation: `README.md` and `docs/hooks.md`.
 
-[Unreleased]: https://github.com/cengebretson/tmux-attention/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/cengebretson/tmux-attention/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/cengebretson/tmux-attention/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/cengebretson/tmux-attention/compare/v0.2.4...v0.3.0
 [0.2.4]: https://github.com/cengebretson/tmux-attention/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/cengebretson/tmux-attention/compare/v0.2.2...v0.2.3
