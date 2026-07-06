@@ -15,6 +15,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The delayed clear also compares `@agent_attention_updated_at`, so a marker
   re-set with the same state during the delay window is no longer cleared
   early.
+- Plugin defaults now use tmux's set-if-unset option semantics instead of
+  probing missing user options, avoiding `invalid option` startup messages.
 
 ### Added
 

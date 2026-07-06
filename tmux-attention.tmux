@@ -6,9 +6,7 @@ set_default_option() {
 	local option="$1"
 	local value="$2"
 
-	if ! tmux show-option -g "$option" >/dev/null 2>&1; then
-		tmux set-option -gq "$option" "$value"
-	fi
+	tmux set-option -goq "$option" "$value"
 }
 
 set_default_option "@tmux_attention_icon_input" "󱐋"
