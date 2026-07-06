@@ -12,6 +12,12 @@ Run the integration suite (spins up an isolated tmux server):
 tests/check.sh
 ```
 
+## Pre-commit
+
+`.pre-commit-config.yaml` runs ShellCheck over the scripts/entry/harness and then
+the integration suite. Enable it once with `pre-commit install` (requires
+[pre-commit](https://pre-commit.com) and `shellcheck` on PATH).
+
 ## Versioning and releases
 
 SemVer. The current version lives in `VERSION` and is printable via `tmux-attention version` (read by `scripts/tmux-attention`). Notes are tracked in a Keep a Changelog `CHANGELOG.md`.

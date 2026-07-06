@@ -6,6 +6,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- The delayed clear-on-view now clears `@agent_attention_source`,
+  `@agent_attention_reason`, and `@agent_attention_updated_at` along with the
+  marker, matching the CLI's `clear`, so no stale metadata survives an
+  auto-clear.
+- The delayed clear also compares `@agent_attention_updated_at`, so a marker
+  re-set with the same state during the delay window is no longer cleared
+  early.
+
+### Added
+
+- Pre-commit config (`.pre-commit-config.yaml`) running ShellCheck and the
+  integration tests; enable with `pre-commit install`.
+
 ## [0.3.1] - 2026-06-24
 
 ### Fixed

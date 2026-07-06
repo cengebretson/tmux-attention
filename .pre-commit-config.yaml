@@ -1,0 +1,18 @@
+# Pre-commit hooks for tmux-attention. Enable once with `pre-commit install`.
+# Requires the pre-commit framework (https://pre-commit.com) and shellcheck +
+# tmux on PATH (the hooks run them via the system environment).
+repos:
+  - repo: local
+    hooks:
+      - id: shellcheck
+        name: shellcheck
+        entry: shellcheck
+        language: system
+        files: '^(scripts/.*|tests/check\.sh|tmux-attention\.tmux)$'
+
+      - id: tmux-attention-tests
+        name: tmux-attention integration tests
+        entry: tests/check.sh
+        language: script
+        pass_filenames: false
+        always_run: true

@@ -33,6 +33,13 @@ quote_for_single_quotes() {
 	printf "%s" "$1" | sed "s/'/'\\\\''/g"
 }
 
+# Capture the marker's timestamp too: comparing only the state string would
+# clear a marker that was re-set with the *same* state during the sleep.
+updated_at="$(tmux show-options -wqv -t "$target" @agent_attention_updated_at 2>/dev/null || printf '')"
+
 escaped_target="$(quote_for_single_quotes "$target")"
 escaped_current="$(quote_for_single_quotes "$current")"
-tmux run-shell -b "sleep $delay; current=\$(tmux show-options -wqv -t '$escaped_target' @agent_attention 2>/dev/null || printf ''); if [ \"\$current\" = '$escaped_current' ]; then tmux set-window-option -q -t '$escaped_target' @agent_attention '' || true; fi"
+escaped_updated_at="$(quote_for_single_quotes "$updated_at")"
+# Clear all four options together, matching the CLI's `clear`, so no stale
+# source/reason/updated_at survives an auto-clear.
+tmux run-shell -b "sleep $delay; current=\$(tmux show-options -wqv -t '$escaped_target' @agent_attention 2>/dev/null || printf ''); updated=\$(tmux show-options -wqv -t '$escaped_target' @agent_attention_updated_at 2>/dev/null || printf ''); if [ \"\$current\" = '$escaped_current' ] && [ \"\$updated\" = '$escaped_updated_at' ]; then tmux set-window-option -q -t '$escaped_target' @agent_attention '' || true; tmux set-window-option -q -t '$escaped_target' @agent_attention_source '' || true; tmux set-window-option -q -t '$escaped_target' @agent_attention_reason '' || true; tmux set-window-option -q -t '$escaped_target' @agent_attention_updated_at '' || true; fi"
