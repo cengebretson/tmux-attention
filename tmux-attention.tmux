@@ -15,7 +15,6 @@ set_default_option "@tmux_attention_icon_review" "󰛨"
 set_default_option "@tmux_attention_icon_done" ""
 set_default_option "@tmux_attention_clear_delay" "8"
 set_default_option "@tmux_attention_clear_on_view" "on"
-set_default_option "@tmux_attention_cli" "$CURRENT_DIR/scripts/tmux-attention"
 
 set_default_option "@tmux_attention_status" "#{?#{==:#{@agent_attention},input},#{@tmux_attention_icon_input} ,#{?#{==:#{@agent_attention},blocked},#{@tmux_attention_icon_blocked} ,#{?#{==:#{@agent_attention},review},#{@tmux_attention_icon_review} ,#{?#{==:#{@agent_attention},done},#{@tmux_attention_icon_done} ,}}}}"
 

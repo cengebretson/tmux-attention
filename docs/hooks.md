@@ -91,6 +91,9 @@ Default target:
 ~/.codex/hooks.json
 ```
 
+If `CODEX_HOME` is set, the default becomes `$CODEX_HOME/hooks.json`
+(`TMUX_ATTENTION_CODEX_HOOKS` still overrides the full path).
+
 Installed hooks:
 
 | Event | Matcher | Command |

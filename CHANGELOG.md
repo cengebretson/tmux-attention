@@ -6,6 +6,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- `install-hooks` now parses arguments in any order, so
+  `install-hooks claude --uninstall` uninstalls instead of silently installing;
+  unknown or extra arguments now error with exit 2.
+- `install-hooks --uninstall` no longer creates or rewrites hook config files
+  that have nothing to remove: a missing file stays missing (previously it was
+  created with empty hooks), and a config without managed entries is no longer
+  reformatted or backed up.
+- `tmux-attention doctor` now propagates the doctor check's exit status instead
+  of always exiting 0.
+- `tmux-attention --help` now documents the `--source` / `--reason` flags and
+  the full event list; the README documents the `blocked`, `stop_failure`,
+  `hook_failure`, `review_required`, and `needs_review` event mappings; the
+  `CODEX_HOME` default for the Codex hooks path is documented in
+  `install-hooks --help` and docs/hooks.md.
+
+### Removed
+
+- The unused, undocumented `@tmux_attention_cli` tmux option is no longer set
+  by the plugin (nothing read it).
+
 ## [0.3.2] - 2026-07-06
 
 ### Fixed

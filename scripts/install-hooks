@@ -12,40 +12,50 @@ Environment overrides for tests or custom locations:
   TMUX_ATTENTION_CLI
   TMUX_ATTENTION_CLAUDE_SETTINGS
   TMUX_ATTENTION_CODEX_HOOKS
+  CODEX_HOME (default Codex hooks path is $CODEX_HOME/hooks.json, falling back
+              to ~/.codex/hooks.json; TMUX_ATTENTION_CODEX_HOOKS wins)
 EOF
 }
 
 action="install"
-target="${1:-all}"
+target=""
 
-case "$target" in
-	--status)
-		action="status"
-		target="${2:-all}"
-		;;
-	--print)
-		action="print"
-		target="${2:-all}"
-		;;
-	--uninstall)
-		action="uninstall"
-		target="${2:-all}"
-		;;
-	-h|--help|help)
-		usage
-		exit 0
-		;;
-esac
+while [ "$#" -gt 0 ]; do
+	case "$1" in
+		--status)
+			action="status"
+			shift
+			;;
+		--print)
+			action="print"
+			shift
+			;;
+		--uninstall)
+			action="uninstall"
+			shift
+			;;
+		-h|--help|help)
+			usage
+			exit 0
+			;;
+		claude|codex|all)
+			if [ -n "$target" ]; then
+				printf 'install-hooks: unexpected argument: %s\n' "$1" >&2
+				usage >&2
+				exit 2
+			fi
+			target="$1"
+			shift
+			;;
+		*)
+			printf 'install-hooks: unknown argument: %s\n' "$1" >&2
+			usage >&2
+			exit 2
+			;;
+	esac
+done
 
-case "$target" in
-	claude|codex|all)
-		;;
-	*)
-		printf 'install-hooks: unknown target: %s\n' "$target" >&2
-		usage >&2
-		exit 2
-		;;
-esac
+target="${target:-all}"
 
 if ! command -v python3 >/dev/null 2>&1; then
 	printf 'install-hooks: python3 is required to edit JSON hook config files\n' >&2
@@ -249,6 +259,23 @@ def merge_hooks(config, managed_hooks):
     return config
 
 
+def count_managed_hooks(config):
+    hooks = config.get("hooks")
+    if not isinstance(hooks, dict):
+        return 0
+    return sum(
+        1
+        for groups in hooks.values()
+        if isinstance(groups, list)
+        for group in groups
+        if isinstance(group, dict)
+        for handler in group.get("hooks", [])
+        if isinstance(handler, dict)
+        and isinstance(handler.get("command"), str)
+        and MARKER in handler["command"]
+    )
+
+
 def marker_tail(command):
     index = command.find(MARKER)
     return command[index:] if index != -1 else None
@@ -302,6 +329,12 @@ for name, path, managed_hooks in targets():
         continue
 
     if ACTION == "uninstall":
+        # Leave the file alone when there is nothing to remove: never create a
+        # config that did not exist, and never reformat/back up one that has no
+        # managed entries.
+        if not path.exists() or count_managed_hooks(config) == 0:
+            print(f"{name}: nothing to uninstall ({path})")
+            continue
         next_config = remove_managed_hooks(config)
         write_json(path, next_config)
         print(f"{name}: uninstalled ({path})")

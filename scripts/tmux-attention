@@ -5,8 +5,10 @@ TMUX_ATTENTION_VERSION="$(cat "$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)/V
 usage() {
 	cat <<'EOF'
 Usage: tmux-attention [input|blocked|review|done|clear] [--target <tmux-target>]
+                      [--source <source>] [--reason <reason>]
        tmux-attention [--target <tmux-target>] [input|blocked|review|done|clear]
        tmux-attention event <event> [--target <tmux-target>]
+                      [--source <source>] [--reason <reason>]
        tmux-attention get [--target <tmux-target>] [--format text|json]
        tmux-attention list [--session <session>] [--format text|json]
        tmux-attention status-format
@@ -16,8 +18,11 @@ Usage: tmux-attention [input|blocked|review|done|clear] [--target <tmux-target>]
 
 Sets the tmux window option @agent_attention for the target tmux window.
 Without --target, uses the current tmux pane. Without a state, defaults to input.
-Event names include approval_required, task_complete, session_started,
-tool_running, and tool_finished.
+State and event writes accept optional --source and --reason metadata, stored
+as window options next to the marker.
+Event names include approval_required, blocked, stop_failure, hook_failure,
+review_required, needs_review, task_complete, session_started, plus
+tool_running and tool_finished as no-ops.
 EOF
 }
 
@@ -409,7 +414,7 @@ EOF
 		;;
 	doctor|check)
 		doctor "$doctor_probe"
-		exit 0
+		exit "$?"
 		;;
 	version|--version|-v)
 		printf 'tmux-attention %s\n' "$TMUX_ATTENTION_VERSION"

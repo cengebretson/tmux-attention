@@ -169,9 +169,21 @@ tmux-attention event task_complete --target %12 --source moshi
 tmux-attention event session_started --target %12 --source moshi
 ```
 
-`approval_required` maps to `input`, `task_complete` maps to `done`, and
-`session_started` maps to `clear`. `tool_running` and `tool_finished` are
-accepted as no-ops so noisy event streams can call the adapter safely.
+The adapter maps event names to marker states:
+
+| Event | State |
+|-------|-------|
+| `approval_required` | `input` |
+| `blocked`, `stop_failure`, `hook_failure` | `blocked` |
+| `review_required`, `needs_review` | `review` |
+| `task_complete` | `done` |
+| `session_started` | `clear` |
+| `tool_running`, `tool_finished` | no-op |
+
+`tool_running` and `tool_finished` are accepted as no-ops so noisy event
+streams can call the adapter safely. Unless `--reason` is passed, each
+state-setting event stores its own event name as the reason, and `--source`
+defaults to `event`.
 
 ## Agent Hooks
 

@@ -102,7 +102,6 @@ pass "tmux-attention.tmux has valid bash syntax"
 
 assert_eq "8" "$(tmux_test show-option -gqv @tmux_attention_clear_delay)" "default clear delay is set"
 assert_eq "on" "$(tmux_test show-option -gqv @tmux_attention_clear_on_view)" "default clear-on-view is set"
-assert_eq "$ROOT_DIR/scripts/tmux-attention" "$(tmux_test show-option -gqv @tmux_attention_cli)" "default CLI path points at plugin script"
 
 status="$(tmux_test show-option -gqv @tmux_attention_status)"
 assert_contains "@agent_attention" "$status" "status format reads @agent_attention"
@@ -328,6 +327,60 @@ PY
 )"
 assert_eq "0" "$uninstalled_marker_count" "hook uninstaller removes managed entries"
 rm -rf "$HOOK_TMP"
+
+# install-hooks argument parsing: flags may follow the target, extras are
+# rejected, and uninstall never creates or rewrites files with nothing to remove.
+ARGS_TMP="$(mktemp -d "${TMPDIR:-/tmp}/tmux-attention-args.XXXXXX")"
+ARGS_CLAUDE="$ARGS_TMP/claude/settings.json"
+ARGS_CODEX="$ARGS_TMP/codex/hooks.json"
+
+TMUX_ATTENTION_CLAUDE_SETTINGS="$ARGS_CLAUDE" \
+TMUX_ATTENTION_CODEX_HOOKS="$ARGS_CODEX" \
+	"$ROOT_DIR/scripts/install-hooks" claude >/dev/null
+TMUX_ATTENTION_CLAUDE_SETTINGS="$ARGS_CLAUDE" \
+TMUX_ATTENTION_CODEX_HOOKS="$ARGS_CODEX" \
+	"$ROOT_DIR/scripts/install-hooks" claude --uninstall >/dev/null
+assert_contains "claude: not installed" "$(
+	TMUX_ATTENTION_CLAUDE_SETTINGS="$ARGS_CLAUDE" \
+	TMUX_ATTENTION_CODEX_HOOKS="$ARGS_CODEX" \
+		"$ROOT_DIR/scripts/install-hooks" --status claude
+)" "install-hooks accepts --uninstall after the target"
+
+extra_args_rc=0
+TMUX_ATTENTION_CLAUDE_SETTINGS="$ARGS_CLAUDE" \
+TMUX_ATTENTION_CODEX_HOOKS="$ARGS_CODEX" \
+	"$ROOT_DIR/scripts/install-hooks" claude codex >/dev/null 2>&1 || extra_args_rc=$?
+assert_eq "2" "$extra_args_rc" "install-hooks rejects extra target arguments"
+
+unknown_arg_rc=0
+TMUX_ATTENTION_CLAUDE_SETTINGS="$ARGS_CLAUDE" \
+TMUX_ATTENTION_CODEX_HOOKS="$ARGS_CODEX" \
+	"$ROOT_DIR/scripts/install-hooks" --uninstall claude bogus >/dev/null 2>&1 || unknown_arg_rc=$?
+assert_eq "2" "$unknown_arg_rc" "install-hooks rejects unknown arguments"
+
+TMUX_ATTENTION_CLAUDE_SETTINGS="$ARGS_TMP/never/claude.json" \
+TMUX_ATTENTION_CODEX_HOOKS="$ARGS_TMP/never/codex.json" \
+	"$ROOT_DIR/scripts/install-hooks" --uninstall all >/dev/null
+if [ ! -e "$ARGS_TMP/never/claude.json" ] && [ ! -e "$ARGS_TMP/never/codex.json" ]; then
+	pass "uninstall does not create missing config files"
+else
+	fail "uninstall does not create missing config files"
+fi
+
+printf '{"hooks": {"Stop": []}}\n' >"$ARGS_TMP/unmanaged.json"
+before_unmanaged="$(cat "$ARGS_TMP/unmanaged.json")"
+TMUX_ATTENTION_CLAUDE_SETTINGS="$ARGS_TMP/unmanaged.json" \
+TMUX_ATTENTION_CODEX_HOOKS="$ARGS_TMP/never/codex.json" \
+	"$ROOT_DIR/scripts/install-hooks" --uninstall claude >/dev/null
+assert_eq "$before_unmanaged" "$(cat "$ARGS_TMP/unmanaged.json")" "uninstall leaves configs without managed entries untouched"
+unmanaged_backup_count=0
+for f in "$ARGS_TMP/unmanaged.json".bak.*; do
+	[ -e "$f" ] || continue
+	unmanaged_backup_count=$((unmanaged_backup_count + 1))
+done
+assert_eq "0" "$unmanaged_backup_count" "uninstall does not back up configs without managed entries"
+
+rm -rf "$ARGS_TMP"
 
 SETUP_TMP="$(mktemp -d "${TMPDIR:-/tmp}/tmux-attention-setup.XXXXXX")"
 SETUP_TMUX_CONF="$SETUP_TMP/.tmux.conf"
