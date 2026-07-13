@@ -117,23 +117,33 @@ prune_backups() {
 	done
 }
 
+snippet_begin="# tmux-attention: begin"
+snippet_end="# tmux-attention: end"
+
+# Back up config_path (pruning old backups), then write a copy of it with the
+# managed tmux-attention block removed to tmp_path.
+strip_managed_block() {
+	config_path="$1"
+	tmp_path="$2"
+
+	stamp="$(date +%Y%m%d%H%M%S)"
+	cp "$config_path" "$config_path.bak.$stamp"
+	prune_backups "$config_path"
+	awk -v begin="$snippet_begin" -v end="$snippet_end" '
+		$0 == begin { skip = 1; next }
+		$0 == end { skip = 0; next }
+		!skip { print }
+	' "$config_path" >"$tmp_path"
+}
+
 write_status_snippet() {
 	config_path="$1"
 	tmp_path="$(mktemp "${TMPDIR:-/tmp}/tmux-attention-setup.XXXXXX")"
-	begin="# tmux-attention: begin"
-	end="# tmux-attention: end"
 
 	mkdir -p "$(dirname -- "$config_path")"
 
 	if [ -f "$config_path" ]; then
-		stamp="$(date +%Y%m%d%H%M%S)"
-		cp "$config_path" "$config_path.bak.$stamp"
-		prune_backups "$config_path"
-		awk -v begin="$begin" -v end="$end" '
-			$0 == begin { skip = 1; next }
-			$0 == end { skip = 0; next }
-			!skip { print }
-		' "$config_path" >"$tmp_path"
+		strip_managed_block "$config_path" "$tmp_path"
 	else
 		: >"$tmp_path"
 	fi
@@ -143,7 +153,7 @@ write_status_snippet() {
 	fi
 
 	{
-		printf '%s\n' "$begin"
+		printf '%s\n' "$snippet_begin"
 		case "$status_line" in
 			default)
 				"$SCRIPT_DIR/tmux-attention" status-format
@@ -152,7 +162,7 @@ write_status_snippet() {
 				"$SCRIPT_DIR/tmux-attention" catppuccin-format
 				;;
 		esac
-		printf '%s\n' "$end"
+		printf '%s\n' "$snippet_end"
 	} >>"$tmp_path"
 
 	mv "$tmp_path" "$config_path"
@@ -161,24 +171,14 @@ write_status_snippet() {
 
 remove_status_snippet() {
 	config_path="$1"
-	tmp_path="$(mktemp "${TMPDIR:-/tmp}/tmux-attention-setup.XXXXXX")"
-	begin="# tmux-attention: begin"
-	end="# tmux-attention: end"
 
 	if [ ! -f "$config_path" ]; then
 		printf 'tmux config: no file to update (%s)\n' "$config_path"
-		rm -f "$tmp_path"
 		return
 	fi
 
-	stamp="$(date +%Y%m%d%H%M%S)"
-	cp "$config_path" "$config_path.bak.$stamp"
-	prune_backups "$config_path"
-	awk -v begin="$begin" -v end="$end" '
-		$0 == begin { skip = 1; next }
-		$0 == end { skip = 0; next }
-		!skip { print }
-	' "$config_path" >"$tmp_path"
+	tmp_path="$(mktemp "${TMPDIR:-/tmp}/tmux-attention-setup.XXXXXX")"
+	strip_managed_block "$config_path" "$tmp_path"
 
 	mv "$tmp_path" "$config_path"
 	printf 'tmux config: removed managed block (%s)\n' "$config_path"

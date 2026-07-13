@@ -6,6 +6,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Hot-path tmux calls are now batched into single tmux invocations: the CLI
+  sets or clears all four marker options in one call (previously four) and
+  reads `session_attached`/`window_active` in one call; `clear-after-delay`
+  reads the marker state and timestamp in one call and its scheduled clear
+  removes all four options in one call; the plugin applies its load-time
+  defaults and hooks in one call. Behavior is unchanged.
+- `setup` now uses a shared `strip_managed_block` helper for the backup +
+  managed-block-strip logic previously duplicated between `write_status_snippet`
+  and `remove_status_snippet` (no behavior change).
+
 ## [0.4.0] - 2026-07-12
 
 ### Fixed

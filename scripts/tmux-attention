@@ -152,20 +152,22 @@ require_target() {
 set_attention() {
 	attention_state="$1"
 
+	# Write all four marker options in one tmux invocation (\;-separated
+	# commands): these run on every hook event, so avoid four round trips.
 	case "$attention_state" in
 		clear|none|off)
-			tmux set-window-option -q -t "$target" @agent_attention ''
-			tmux set-window-option -q -t "$target" @agent_attention_source ''
-			tmux set-window-option -q -t "$target" @agent_attention_reason ''
-			tmux set-window-option -q -t "$target" @agent_attention_updated_at ''
+			tmux set-window-option -q -t "$target" @agent_attention '' \; \
+				set-window-option -q -t "$target" @agent_attention_source '' \; \
+				set-window-option -q -t "$target" @agent_attention_reason '' \; \
+				set-window-option -q -t "$target" @agent_attention_updated_at ''
 			return 0
 			;;
 	esac
 
-	tmux set-window-option -q -t "$target" @agent_attention "$attention_state"
-	tmux set-window-option -q -t "$target" @agent_attention_source "$source"
-	tmux set-window-option -q -t "$target" @agent_attention_reason "$reason"
-	tmux set-window-option -q -t "$target" @agent_attention_updated_at "$(date +%s)"
+	tmux set-window-option -q -t "$target" @agent_attention "$attention_state" \; \
+		set-window-option -q -t "$target" @agent_attention_source "$source" \; \
+		set-window-option -q -t "$target" @agent_attention_reason "$reason" \; \
+		set-window-option -q -t "$target" @agent_attention_updated_at "$(date +%s)"
 }
 
 get_option() {
@@ -182,9 +184,9 @@ print_get() {
 		return 1
 	}
 	state_value="$(get_option @agent_attention)"
-	source_value="$(get_option @agent_attention_source || printf '')"
-	reason_value="$(get_option @agent_attention_reason || printf '')"
-	updated_at_value="$(get_option @agent_attention_updated_at || printf '')"
+	source_value="$(get_option @agent_attention_source)"
+	reason_value="$(get_option @agent_attention_reason)"
+	updated_at_value="$(get_option @agent_attention_updated_at)"
 
 	case "$format" in
 		text)
@@ -504,8 +506,10 @@ case "$state" in
 		;;
 esac
 
-attached="$(tmux display-message -p -t "$target" '#{session_attached}' 2>/dev/null || printf '0')"
-active="$(tmux display-message -p -t "$target" '#{window_active}' 2>/dev/null || printf '0')"
+# One display-message round trip for both flags; split on the space.
+attached_active="$(tmux display-message -p -t "$target" '#{session_attached} #{window_active}' 2>/dev/null || printf '0 0')"
+attached="${attached_active% *}"
+active="${attached_active#* }"
 
 if [ "$attached" != "0" ] && [ "$active" = "1" ]; then
 	script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"

@@ -6,9 +6,15 @@ if [ -z "$target" ] || ! command -v tmux >/dev/null 2>&1; then
 	exit 0
 fi
 
-# No marker on this window? Nothing to clear. This keeps the high-frequency
-# pane-focus-in / select-window hooks from spawning a sleep on every event.
-current="$(tmux show-options -wqv -t "$target" @agent_attention 2>/dev/null || printf '')"
+# Read the marker state and its timestamp in one tmux call. No marker on this
+# window? Nothing to clear. This keeps the high-frequency pane-focus-in /
+# select-window hooks from spawning a sleep on every event. The timestamp is
+# captured alongside the state because comparing only the state string would
+# clear a marker that was re-set with the *same* state during the sleep.
+tab="$(printf '\t')"
+marker="$(tmux display-message -p -t "$target" "#{@agent_attention}${tab}#{@agent_attention_updated_at}" 2>/dev/null || printf '')"
+current="${marker%%"$tab"*}"
+updated_at="${marker#*"$tab"}"
 if [ -z "$current" ]; then
 	exit 0
 fi
@@ -33,13 +39,11 @@ quote_for_single_quotes() {
 	printf "%s" "$1" | sed "s/'/'\\\\''/g"
 }
 
-# Capture the marker's timestamp too: comparing only the state string would
-# clear a marker that was re-set with the *same* state during the sleep.
-updated_at="$(tmux show-options -wqv -t "$target" @agent_attention_updated_at 2>/dev/null || printf '')"
-
 escaped_target="$(quote_for_single_quotes "$target")"
 escaped_current="$(quote_for_single_quotes "$current")"
 escaped_updated_at="$(quote_for_single_quotes "$updated_at")"
 # Clear all four options together, matching the CLI's `clear`, so no stale
-# source/reason/updated_at survives an auto-clear.
-tmux run-shell -b "sleep $delay; current=\$(tmux show-options -wqv -t '$escaped_target' @agent_attention 2>/dev/null || printf ''); updated=\$(tmux show-options -wqv -t '$escaped_target' @agent_attention_updated_at 2>/dev/null || printf ''); if [ \"\$current\" = '$escaped_current' ] && [ \"\$updated\" = '$escaped_updated_at' ]; then tmux set-window-option -q -t '$escaped_target' @agent_attention '' || true; tmux set-window-option -q -t '$escaped_target' @agent_attention_source '' || true; tmux set-window-option -q -t '$escaped_target' @agent_attention_reason '' || true; tmux set-window-option -q -t '$escaped_target' @agent_attention_updated_at '' || true; fi"
+# source/reason/updated_at survives an auto-clear. The four clears run as one
+# tmux invocation (';'-separated commands); the trailing `|| true` keeps a
+# vanished window from emitting a tmux "returned 1" message.
+tmux run-shell -b "sleep $delay; current=\$(tmux show-options -wqv -t '$escaped_target' @agent_attention 2>/dev/null || printf ''); updated=\$(tmux show-options -wqv -t '$escaped_target' @agent_attention_updated_at 2>/dev/null || printf ''); if [ \"\$current\" = '$escaped_current' ] && [ \"\$updated\" = '$escaped_updated_at' ]; then tmux set-window-option -q -t '$escaped_target' @agent_attention '' ';' set-window-option -q -t '$escaped_target' @agent_attention_source '' ';' set-window-option -q -t '$escaped_target' @agent_attention_reason '' ';' set-window-option -q -t '$escaped_target' @agent_attention_updated_at '' || true; fi"

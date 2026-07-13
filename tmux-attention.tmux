@@ -2,11 +2,23 @@
 
 CURRENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Queue load-time tmux commands so everything below is applied by a single
+# tmux invocation (";"-separated commands) instead of one process per
+# option/hook.
+load_batch=()
+
+queue_tmux() {
+	if [ "${#load_batch[@]}" -gt 0 ]; then
+		load_batch+=(";")
+	fi
+	load_batch+=("$@")
+}
+
 set_default_option() {
 	local option="$1"
 	local value="$2"
 
-	tmux set-option -goq "$option" "$value"
+	queue_tmux set-option -goq "$option" "$value"
 }
 
 set_default_option "@tmux_attention_icon_input" "󱐋"
@@ -27,5 +39,7 @@ set_default_option "@tmux_attention_status" "#{?#{==:#{@agent_attention},input},
 # no-ops when the window has no marker, so the frequent focus hook stays cheap.
 clear_on_view="if -F '#{==:#{@tmux_attention_clear_on_view},on}' 'run-shell -b \"\\\"$CURRENT_DIR/scripts/clear-after-delay\\\" \\\"#{window_id}\\\"\"'"
 for hook in after-select-window client-attached client-session-changed pane-focus-in; do
-	tmux set-hook -g "${hook}[90]" "$clear_on_view"
+	queue_tmux set-hook -g "${hook}[90]" "$clear_on_view"
 done
+
+tmux "${load_batch[@]}"
