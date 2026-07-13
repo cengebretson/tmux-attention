@@ -477,6 +477,27 @@ else
 fi
 assert_eq "2" "$unknown_rc" "CLI exits 2 on unknown state"
 
+# --reason/--source metadata is stored as tab-separated fields elsewhere (see
+# `list`), so a literal tab or newline in either would misalign columns.
+clean_rc=0
+TMUX_PANE="$pane" "$ROOT_DIR/scripts/tmux-attention" input --reason "agent needs approval" >/dev/null 2>&1 || clean_rc=$?
+assert_eq "0" "$clean_rc" "CLI accepts a --reason with no control characters"
+
+tabbed_reason="$(printf 'agent\tneeds approval')"
+tab_reason_rc=0
+TMUX_PANE="$pane" "$ROOT_DIR/scripts/tmux-attention" input --reason "$tabbed_reason" >/dev/null 2>&1 || tab_reason_rc=$?
+assert_eq "2" "$tab_reason_rc" "CLI rejects a --reason containing a tab"
+
+newlined_reason="$(printf 'agent\nneeds approval')"
+nl_reason_rc=0
+TMUX_PANE="$pane" "$ROOT_DIR/scripts/tmux-attention" input --reason "$newlined_reason" >/dev/null 2>&1 || nl_reason_rc=$?
+assert_eq "2" "$nl_reason_rc" "CLI rejects a --reason containing a newline"
+
+tabbed_source="$(printf 'a\tb')"
+tab_source_rc=0
+TMUX_PANE="$pane" "$ROOT_DIR/scripts/tmux-attention" input --source "$tabbed_source" >/dev/null 2>&1 || tab_source_rc=$?
+assert_eq "2" "$tab_source_rc" "CLI rejects a --source containing a tab"
+
 bell_char="$(printf '\a')"
 bell_output="$(env -u TMUX_PANE "$ROOT_DIR/scripts/tmux-attention" input 2>/dev/null || true)"
 assert_eq "$bell_char" "$bell_output" "CLI rings the bell when run outside tmux"

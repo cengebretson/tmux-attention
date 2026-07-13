@@ -18,6 +18,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   managed-block-strip logic previously duplicated between `write_status_snippet`
   and `remove_status_snippet` (no behavior change).
 
+### Fixed
+
+- `--source` and `--reason` now reject values containing a tab or newline
+  (exit 2), since both are stored as tab-separated fields elsewhere (`list`'s
+  text and JSON output); a control character in either could previously
+  misalign downstream columns.
+
 ## [0.4.0] - 2026-07-12
 
 ### Fixed

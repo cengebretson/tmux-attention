@@ -19,7 +19,8 @@ Usage: tmux-attention [input|blocked|review|done|clear] [--target <tmux-target>]
 Sets the tmux window option @agent_attention for the target tmux window.
 Without --target, uses the current tmux pane. Without a state, defaults to input.
 State and event writes accept optional --source and --reason metadata, stored
-as window options next to the marker.
+as window options next to the marker. Neither may contain a tab or newline
+(both are used as field separators elsewhere, e.g. `list`).
 Event names include approval_required, blocked, stop_failure, hook_failure,
 review_required, needs_review, task_complete, session_started, plus
 tool_running and tool_finished as no-ops.
@@ -377,6 +378,25 @@ while [ "$#" -gt 0 ]; do
 			;;
 	esac
 done
+
+_tab_char="$(printf '\t')"
+_nl_char="$(printf '\nX')"; _nl_char="${_nl_char%X}"
+
+case "$source" in
+	*"$_tab_char"*|*"$_nl_char"*)
+		printf 'tmux-attention: --source must not contain tabs or newlines\n' >&2
+		usage >&2
+		exit 2
+		;;
+esac
+
+case "$reason" in
+	*"$_tab_char"*|*"$_nl_char"*)
+		printf 'tmux-attention: --reason must not contain tabs or newlines\n' >&2
+		usage >&2
+		exit 2
+		;;
+esac
 
 case "$format" in
 	text|json)
