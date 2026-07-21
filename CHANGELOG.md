@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-07-21
+
 ### Fixed
 
 - `clear-after-delay` no longer leaks a non-zero exit status when its final
@@ -194,7 +196,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   server and a GitHub Actions CI workflow running ShellCheck and the tests.
 - Documentation: `README.md` and `docs/hooks.md`.
 
-[Unreleased]: https://github.com/cengebretson/tmux-attention/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/cengebretson/tmux-attention/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/cengebretson/tmux-attention/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/cengebretson/tmux-attention/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/cengebretson/tmux-attention/compare/v0.3.2...v0.4.0
 [0.3.2]: https://github.com/cengebretson/tmux-attention/compare/v0.3.1...v0.3.2
