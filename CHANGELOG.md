@@ -6,6 +6,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- `clear-after-delay` no longer leaks a non-zero exit status when its final
+  `run-shell -b` scheduling call transiently fails to reach the tmux server.
+  The script is fired by the `client-attached`, `client-session-changed`, and
+  `after-select-window` hooks, precisely the attach/detach/session-change
+  moments when a backgrounded tmux command can momentarily fail; that failure
+  became the script's exit status and surfaced as
+  `'"…/clear-after-delay" "@N"' returned 1`. The scheduling call is now guarded
+  (a failed schedule is not actionable, since the next focus event reschedules).
+
 ## [0.5.0] - 2026-07-12
 
 ### Changed

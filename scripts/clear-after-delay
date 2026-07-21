@@ -44,6 +44,17 @@ escaped_current="$(quote_for_single_quotes "$current")"
 escaped_updated_at="$(quote_for_single_quotes "$updated_at")"
 # Clear all four options together, matching the CLI's `clear`, so no stale
 # source/reason/updated_at survives an auto-clear. The four clears run as one
-# tmux invocation (';'-separated commands); the trailing `|| true` keeps a
+# tmux invocation (';'-separated commands); the inner `|| true` keeps a
 # vanished window from emitting a tmux "returned 1" message.
-tmux run-shell -b "sleep $delay; current=\$(tmux show-options -wqv -t '$escaped_target' @agent_attention 2>/dev/null || printf ''); updated=\$(tmux show-options -wqv -t '$escaped_target' @agent_attention_updated_at 2>/dev/null || printf ''); if [ \"\$current\" = '$escaped_current' ] && [ \"\$updated\" = '$escaped_updated_at' ]; then tmux set-window-option -q -t '$escaped_target' @agent_attention '' ';' set-window-option -q -t '$escaped_target' @agent_attention_source '' ';' set-window-option -q -t '$escaped_target' @agent_attention_reason '' ';' set-window-option -q -t '$escaped_target' @agent_attention_updated_at '' || true; fi"
+#
+# The outer `|| true` (and the trailing `exit 0`) guard the *scheduling* call
+# itself: this script is fired by the client-attached / client-session-changed
+# / after-select-window hooks, exactly the moments when a backgrounded tmux
+# command can transiently fail to reach the server (attach/detach races). That
+# failure would otherwise become this script's exit status, and since tmux runs
+# the script via `run-shell -b`, it would surface as
+# `'"…/clear-after-delay" "@N"' returned 1`. A failed schedule is not
+# actionable (the next focus event reschedules), so never propagate it.
+tmux run-shell -b "sleep $delay; current=\$(tmux show-options -wqv -t '$escaped_target' @agent_attention 2>/dev/null || printf ''); updated=\$(tmux show-options -wqv -t '$escaped_target' @agent_attention_updated_at 2>/dev/null || printf ''); if [ \"\$current\" = '$escaped_current' ] && [ \"\$updated\" = '$escaped_updated_at' ]; then tmux set-window-option -q -t '$escaped_target' @agent_attention '' ';' set-window-option -q -t '$escaped_target' @agent_attention_source '' ';' set-window-option -q -t '$escaped_target' @agent_attention_reason '' ';' set-window-option -q -t '$escaped_target' @agent_attention_updated_at '' || true; fi" || true
+
+exit 0
