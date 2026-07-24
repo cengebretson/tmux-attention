@@ -135,8 +135,8 @@ tmux-attention list --format json
 tmux-attention review
 tmux-attention done
 tmux-attention clear
-tmux-attention turn-start --agent Codex
-tmux-attention turn-start --agent Codex --project FLYWL-2533
+tmux-attention turn-start
+tmux-attention turn-start --project FLYWL-2533
 tmux-attention turn-stop
 tmux-attention status-format
 tmux-attention catppuccin-format
@@ -214,7 +214,7 @@ Agent hooks mark a turn active from prompt submission until the agent's `Stop`
 event. While active, `#{E:@tmux_attention_context}` renders:
 
 ```text
-FLYWL-2533 · Codex
+FLYWL-2533
 ```
 
 When no agent turn is active, the same format renders the basename of
@@ -236,7 +236,6 @@ The context window options are:
 | Option | Meaning |
 |--------|---------|
 | `@agent_context_active` | `1` while an agent turn is running |
-| `@agent_context_name` | display name supplied by the hook |
 | `@agent_context_project` | derived or supplied project label |
 | `@agent_context_pane` | pane that owns the active context |
 | `@agent_context_updated_at` | Unix timestamp for the latest turn start |

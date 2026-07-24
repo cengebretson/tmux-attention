@@ -134,10 +134,7 @@ CLAUDE_HOOKS = {
             "hooks": [
                 {
                     "type": "command",
-                    "command": command(
-                        "turn-start --agent Claude",
-                        "claude:turn-start",
-                    ),
+                    "command": command("turn-start", "claude:turn-start"),
                 }
             ],
         }
@@ -171,10 +168,7 @@ CODEX_HOOKS = {
             "hooks": [
                 {
                     "type": "command",
-                    "command": command(
-                        "turn-start --agent Codex",
-                        "codex:turn-start",
-                    ),
+                    "command": command("turn-start", "codex:turn-start"),
                 }
             ],
         }

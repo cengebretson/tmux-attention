@@ -11,8 +11,7 @@ Usage: tmux-attention [input|blocked|review|done|clear] [--target <tmux-target>]
                       [--source <source>] [--reason <reason>]
        tmux-attention get [--target <tmux-target>] [--format text|json]
        tmux-attention list [--session <session>] [--format text|json]
-       tmux-attention turn-start --agent <name> [--project <project>]
-                      [--target <tmux-target>]
+       tmux-attention turn-start [--project <project>] [--target <tmux-target>]
        tmux-attention turn-stop [--target <tmux-target>]
        tmux-attention status-format
        tmux-attention catppuccin-format
@@ -33,8 +32,8 @@ turn-start marks an agent turn active for the target window and clears any
 attention marker. It derives the project from the pane's Git branch/repository
 or working directory unless --project is provided. turn-stop clears the agent
 context only when called from the pane that started it. The plugin's
-@tmux_attention_context format renders "<project> · <agent>" while active and
-falls back to the current pane directory otherwise.
+@tmux_attention_context format renders the project while active and falls back
+to the current pane directory otherwise.
 EOF
 }
 
@@ -237,7 +236,6 @@ set_turn_start() {
 		set-window-option -q -t "$target" @agent_attention_reason '' \; \
 		set-window-option -q -t "$target" @agent_attention_updated_at '' \; \
 		set-window-option -q -t "$target" @agent_context_active '1' \; \
-		set-window-option -q -t "$target" @agent_context_name "$agent" \; \
 		set-window-option -q -t "$target" @agent_context_project "$project" \; \
 		set-window-option -q -t "$target" @agent_context_pane "$context_pane" \; \
 		set-window-option -q -t "$target" @agent_context_updated_at "$(date +%s)"
@@ -258,7 +256,6 @@ set_turn_stop() {
 	fi
 
 	tmux set-window-option -q -t "$target" @agent_context_active '' \; \
-		set-window-option -q -t "$target" @agent_context_name '' \; \
 		set-window-option -q -t "$target" @agent_context_project '' \; \
 		set-window-option -q -t "$target" @agent_context_pane '' \; \
 		set-window-option -q -t "$target" @agent_context_updated_at ''
@@ -363,7 +360,6 @@ session=""
 source=""
 reason=""
 event_type=""
-agent=""
 project=""
 
 while [ "$#" -gt 0 ]; do
@@ -438,19 +434,6 @@ while [ "$#" -gt 0 ]; do
 			reason="${1#--reason=}"
 			shift
 			;;
-		--agent)
-			if [ "$#" -lt 2 ]; then
-				printf 'tmux-attention: --agent requires a value\n' >&2
-				usage >&2
-				exit 2
-			fi
-			agent="$2"
-			shift 2
-			;;
-		--agent=*)
-			agent="${1#--agent=}"
-			shift
-			;;
 		--project)
 			if [ "$#" -lt 2 ]; then
 				printf 'tmux-attention: --project requires a value\n' >&2
@@ -515,14 +498,6 @@ case "$reason" in
 		;;
 esac
 
-case "$agent" in
-	*"$_tab_char"*|*"$_nl_char"*)
-		printf 'tmux-attention: --agent must not contain tabs or newlines\n' >&2
-		usage >&2
-		exit 2
-		;;
-esac
-
 case "$project" in
 	*"$_tab_char"*|*"$_nl_char"*)
 		printf 'tmux-attention: --project must not contain tabs or newlines\n' >&2
@@ -551,14 +526,7 @@ case "$state" in
 			exit 2
 		fi
 		;;
-	get|list|turn-stop)
-		;;
-	turn-start)
-		if [ -z "$agent" ]; then
-			printf 'tmux-attention: turn-start requires --agent\n' >&2
-			usage >&2
-			exit 2
-		fi
+	get|list|turn-start|turn-stop)
 		;;
 	status-format|format)
 		cat <<'EOF'

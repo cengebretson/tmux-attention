@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Active context now renders only the derived project label. Prompt hooks no
+  longer send an agent name, and `turn-start` no longer requires `--agent`.
+
 ## [0.5.2] - 2026-07-24
 
 ### Added
