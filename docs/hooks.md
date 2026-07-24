@@ -77,7 +77,8 @@ Installed hooks:
 |-------|---------|---------|
 | `Notification` | `permission_prompt|idle_prompt` | `tmux-attention input` |
 | `StopFailure` | none | `tmux-attention blocked` |
-| `UserPromptSubmit` | none | `tmux-attention clear` |
+| `UserPromptSubmit` | none | `tmux-attention turn-start --agent Claude` |
+| `Stop` | none | `tmux-attention turn-stop` |
 
 After installing Claude Code hooks, use `/hooks` in Claude Code to verify the
 installed hook definitions. The Claude Code hook menu is read-only; edits are
@@ -99,14 +100,20 @@ Installed hooks:
 | Event | Matcher | Command |
 |-------|---------|---------|
 | `PermissionRequest` | `.*` | `tmux-attention input` |
-| `UserPromptSubmit` | none | `tmux-attention clear` |
+| `UserPromptSubmit` | none | `tmux-attention turn-start --agent Codex` |
+| `Stop` | none | `tmux-attention turn-stop` |
 
 After installing Codex hooks, use `/hooks` in Codex to review and trust the
 installed hook definitions. Codex skips non-managed hooks until they are
 trusted.
 
-`Stop -> review` is intentionally not installed by default because it can mark
-every normal turn as needing review.
+`Stop` only clears active agent context. It does not set the `review` attention
+state, because that would mark every normal turn as needing review.
+
+The `turn-start` hooks derive a project label from the pane's Git branch,
+repository, or current directory. Include `#{E:@tmux_attention_context}` in a
+status module to render `<project> · <agent>` during a turn and the pane's
+current directory when no agent is running.
 
 ## Custom Paths
 

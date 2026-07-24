@@ -16,8 +16,8 @@ The plugin has three parts:
 | Part | What it does |
 |------|--------------|
 | TPM plugin | Defines tmux options, status rendering, icons, and clear-on-view hooks |
-| CLI | Sets or clears the current tmux window's `@agent_attention` state |
-| Agent hooks | Call the CLI when Claude Code or Codex needs attention |
+| CLI | Sets attention state and active agent context for the current tmux window |
+| Agent hooks | Call the CLI when Claude Code or Codex starts, stops, or needs attention |
 
 For normal use, install the TPM plugin and then install the agent hooks. The
 TPM plugin alone can render a marker, but nothing automatic sets that marker
@@ -62,6 +62,25 @@ The CLI can print that snippet:
 
 ```sh
 ~/.config/tmux/plugins/tmux-attention/scripts/tmux-attention status-format
+```
+
+To show the active agent's project in another status module, with the current
+pane directory as the automatic fallback, use:
+
+```tmux
+#{E:@tmux_attention_context}
+```
+
+For example:
+
+```tmux
+set -ga status-right " 󰉋 #{E:@tmux_attention_context} "
+```
+
+The CLI can print the format token:
+
+```sh
+~/.config/tmux/plugins/tmux-attention/scripts/tmux-attention context-format
 ```
 
 ## Configure
@@ -116,8 +135,12 @@ tmux-attention list --format json
 tmux-attention review
 tmux-attention done
 tmux-attention clear
+tmux-attention turn-start --agent Codex
+tmux-attention turn-start --agent Codex --project FLYWL-2533
+tmux-attention turn-stop
 tmux-attention status-format
 tmux-attention catppuccin-format
+tmux-attention context-format
 tmux-attention doctor
 tmux-attention doctor --probe
 tmux-attention version
@@ -185,6 +208,39 @@ streams can call the adapter safely. Unless `--reason` is passed, each
 state-setting event stores its own event name as the reason, and `--source`
 defaults to `event`.
 
+## Active Agent Context
+
+Agent hooks mark a turn active from prompt submission until the agent's `Stop`
+event. While active, `#{E:@tmux_attention_context}` renders:
+
+```text
+FLYWL-2533 · Codex
+```
+
+When no agent turn is active, the same format renders the basename of
+`pane_current_path`, so ordinary tmux windows keep their normal project
+display.
+
+`turn-start` derives its project label in this order:
+
+1. Jira-style key in the current Git branch, such as `FLYWL-2533`
+2. Git repository name
+3. Current directory name
+
+Use `--project` to override the derived label. Context is window-scoped, like
+attention state, but records its owning pane so a stale `Stop` from another
+pane cannot clear a newer agent turn.
+
+The context window options are:
+
+| Option | Meaning |
+|--------|---------|
+| `@agent_context_active` | `1` while an agent turn is running |
+| `@agent_context_name` | display name supplied by the hook |
+| `@agent_context_project` | derived or supplied project label |
+| `@agent_context_pane` | pane that owns the active context |
+| `@agent_context_updated_at` | Unix timestamp for the latest turn start |
+
 ## Agent Hooks
 
 Optional Claude Code and Codex hooks can call the same CLI. Setup wraps hook
@@ -199,8 +255,10 @@ installation and status-line config:
 See [docs/hooks.md](docs/hooks.md) for exact hook files, events, and lower-level
 `install-hooks` commands.
 
-The installed hook commands are unchanged by `get`, `list`, metadata, or event
-adapter support. Existing hooks continue to call the plain state commands.
+Prompt-submit hooks call `turn-start`, which also clears the previous attention
+marker. Stop hooks call `turn-stop`, returning the context format to its PWD
+fallback. Permission and failure hooks continue to set the existing attention
+states.
 
 ## Test
 
@@ -211,8 +269,8 @@ tests/check.sh
 ```
 
 The check starts an isolated tmux server and verifies plugin loading, default
-options, user overrides, hook installation, and CLI state changes. CI runs the
-same checks plus ShellCheck on every push and pull request.
+options, user overrides, hook installation, agent context, and CLI state
+changes. CI runs the same checks plus ShellCheck on every push and pull request.
 
 ## Releasing
 
@@ -254,6 +312,12 @@ You can print default snippets with:
 ```sh
 ~/.config/tmux/plugins/tmux-attention/scripts/tmux-attention status-format
 ~/.config/tmux/plugins/tmux-attention/scripts/tmux-attention catppuccin-format
+```
+
+If agent project context is missing from a custom status module, include:
+
+```tmux
+#{E:@tmux_attention_context}
 ```
 
 ### Hooks Are Not Firing

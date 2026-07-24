@@ -6,6 +6,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Agent turn context for status modules. Claude Code and Codex prompt hooks now
+  call `turn-start`, which records the agent and derives the project from the
+  pane's Git branch, repository, or working directory. Stop hooks call
+  `turn-stop`. The `@tmux_attention_context` format renders
+  `<project> · <agent>` while a turn is active and falls back to the current
+  pane directory otherwise.
+- `context-format` prints the reusable agent-context format token, and
+  `turn-start --project` supports an explicit project label when automatic
+  derivation is not appropriate.
+
 ## [0.5.1] - 2026-07-21
 
 ### Fixed

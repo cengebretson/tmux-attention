@@ -134,7 +134,20 @@ CLAUDE_HOOKS = {
             "hooks": [
                 {
                     "type": "command",
-                    "command": command("clear", "claude:user-prompt-submit"),
+                    "command": command(
+                        "turn-start --agent Claude",
+                        "claude:turn-start",
+                    ),
+                }
+            ],
+        }
+    ],
+    "Stop": [
+        {
+            "hooks": [
+                {
+                    "type": "command",
+                    "command": command("turn-stop", "claude:turn-stop"),
                 }
             ],
         }
@@ -158,7 +171,20 @@ CODEX_HOOKS = {
             "hooks": [
                 {
                     "type": "command",
-                    "command": command("clear", "codex:user-prompt-submit"),
+                    "command": command(
+                        "turn-start --agent Codex",
+                        "codex:turn-start",
+                    ),
+                }
+            ],
+        }
+    ],
+    "Stop": [
+        {
+            "hooks": [
+                {
+                    "type": "command",
+                    "command": command("turn-stop", "codex:turn-stop"),
                 }
             ],
         }

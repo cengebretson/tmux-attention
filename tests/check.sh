@@ -106,6 +106,9 @@ assert_eq "on" "$(tmux_test show-option -gqv @tmux_attention_clear_on_view)" "de
 status="$(tmux_test show-option -gqv @tmux_attention_status)"
 assert_contains "@agent_attention" "$status" "status format reads @agent_attention"
 assert_contains "@tmux_attention_icon_blocked" "$status" "status format uses configurable icons"
+context_status="$(tmux_test show-option -gqv @tmux_attention_context)"
+assert_contains "@agent_context_active" "$context_status" "context format reads active agent state"
+assert_contains "pane_current_path" "$context_status" "context format falls back to pane current path"
 
 assert_contains "after-select-window[90]" "$(tmux_test show-hook -g after-select-window)" "after-select-window hook is installed at stable index"
 assert_contains "client-attached[90]" "$(tmux_test show-hook -g client-attached)" "client-attached hook is installed at stable index"
@@ -160,6 +163,27 @@ assert_eq "blocked" "$(tmux_test show-window-option -t "$target_pane" -v @agent_
 "$ROOT_DIR/scripts/tmux-attention" --target "$target_pane" clear
 assert_eq "" "$(tmux_test show-window-option -t "$target_pane" -v @agent_attention)" "CLI clears explicit target before state argument"
 
+"$ROOT_DIR/scripts/tmux-attention" input --target "$target_pane"
+"$ROOT_DIR/scripts/tmux-attention" turn-start --target "$target_pane" --agent Codex --project FLYWL-2533
+assert_eq "" "$(tmux_test show-window-option -t "$target_pane" -v @agent_attention)" "turn-start clears the attention marker"
+assert_eq "1" "$(tmux_test show-window-option -t "$target_pane" -v @agent_context_active)" "turn-start marks agent context active"
+assert_eq "Codex" "$(tmux_test show-window-option -t "$target_pane" -v @agent_context_name)" "turn-start stores the agent name"
+assert_eq "FLYWL-2533" "$(tmux_test show-window-option -t "$target_pane" -v @agent_context_project)" "turn-start stores an explicit project"
+assert_eq "FLYWL-2533 · Codex" "$(tmux_test display-message -p -t "$target_pane" '#{E:@tmux_attention_context}')" "context format renders active agent project"
+
+other_pane="$(tmux_test split-window -d -t "$target_pane" -P -F '#{pane_id}')"
+"$ROOT_DIR/scripts/tmux-attention" turn-stop --target "$other_pane"
+assert_eq "1" "$(tmux_test show-window-option -t "$target_pane" -v @agent_context_active)" "turn-stop from another pane preserves active context"
+
+"$ROOT_DIR/scripts/tmux-attention" turn-stop --target "$target_pane"
+assert_eq "" "$(tmux_test show-window-option -t "$target_pane" -v @agent_context_active)" "turn-stop clears active context"
+expected_path="$(tmux_test display-message -p -t "$target_pane" '#{b:pane_current_path}')"
+assert_eq "$expected_path" "$(tmux_test display-message -p -t "$target_pane" '#{E:@tmux_attention_context}')" "context format falls back to pane directory"
+
+"$ROOT_DIR/scripts/tmux-attention" turn-start --target "$target_pane" --agent Codex
+assert_eq "tmux-attention" "$(tmux_test show-window-option -t "$target_pane" -v @agent_context_project)" "turn-start derives the Git repository name"
+"$ROOT_DIR/scripts/tmux-attention" turn-stop --target "$target_pane"
+
 "$ROOT_DIR/scripts/tmux-attention" blocked --target "$target_pane" --source moshi --reason approval_required
 assert_eq "blocked" "$("$ROOT_DIR/scripts/tmux-attention" get --target "$target_pane")" "CLI gets explicit target state"
 
@@ -193,6 +217,7 @@ assert_eq "2" "$missing_target_rc" "CLI rejects missing target argument"
 
 assert_contains "window-status-format" "$("$ROOT_DIR/scripts/tmux-attention" status-format)" "CLI prints default status format"
 assert_contains "@catppuccin_window_text" "$("$ROOT_DIR/scripts/tmux-attention" catppuccin-format)" "CLI prints Catppuccin status format"
+assert_contains "@tmux_attention_context" "$("$ROOT_DIR/scripts/tmux-attention" context-format)" "CLI prints agent context format"
 
 tmux_test set-option -gq window-status-format "#{E:@tmux_attention_status}#I:#W"
 doctor_output="$(
@@ -280,6 +305,8 @@ absolute_print="$(
 )"
 assert_contains "/opt/tmux-attention/tmux-attention" \
 	"$absolute_print" "managed command keeps an absolute CLI path outside \$HOME"
+assert_contains "turn-start --agent Claude" "$absolute_print" "Claude hooks start agent context"
+assert_contains "turn-stop" "$absolute_print" "Claude hooks stop agent context"
 
 TMUX_ATTENTION_CLAUDE_SETTINGS="$CLAUDE_SETTINGS" \
 TMUX_ATTENTION_CODEX_HOOKS="$CODEX_HOOKS" \
@@ -302,7 +329,7 @@ for path in sys.argv[1:]:
 print(count)
 PY
 )"
-assert_eq "5" "$hook_marker_count" "hook installer is idempotent"
+assert_eq "7" "$hook_marker_count" "hook installer is idempotent"
 
 TMUX_ATTENTION_CLAUDE_SETTINGS="$CLAUDE_SETTINGS" \
 TMUX_ATTENTION_CODEX_HOOKS="$CODEX_HOOKS" \
@@ -497,6 +524,15 @@ tabbed_source="$(printf 'a\tb')"
 tab_source_rc=0
 TMUX_PANE="$pane" "$ROOT_DIR/scripts/tmux-attention" input --source "$tabbed_source" >/dev/null 2>&1 || tab_source_rc=$?
 assert_eq "2" "$tab_source_rc" "CLI rejects a --source containing a tab"
+
+missing_agent_rc=0
+TMUX_PANE="$pane" "$ROOT_DIR/scripts/tmux-attention" turn-start >/dev/null 2>&1 || missing_agent_rc=$?
+assert_eq "2" "$missing_agent_rc" "turn-start requires an agent name"
+
+tabbed_project="$(printf 'FLYWL-2533\tbad')"
+tab_project_rc=0
+TMUX_PANE="$pane" "$ROOT_DIR/scripts/tmux-attention" turn-start --agent Codex --project "$tabbed_project" >/dev/null 2>&1 || tab_project_rc=$?
+assert_eq "2" "$tab_project_rc" "turn-start rejects a project containing a tab"
 
 bell_char="$(printf '\a')"
 bell_output="$(env -u TMUX_PANE "$ROOT_DIR/scripts/tmux-attention" input 2>/dev/null || true)"
