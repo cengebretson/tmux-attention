@@ -6,6 +6,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Add a configurable working-agent icon (`@tmux_attention_icon_working`) and
+  `@tmux_attention_tab_icon`, a compact format that prioritizes attention,
+  then an active agent turn, for replacing rather than prefixing tab numbers.
+
 ## [0.5.3] - 2026-07-24
 
 ### Changed

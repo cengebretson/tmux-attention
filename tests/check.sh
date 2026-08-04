@@ -106,6 +106,10 @@ assert_eq "on" "$(tmux_test show-option -gqv @tmux_attention_clear_on_view)" "de
 status="$(tmux_test show-option -gqv @tmux_attention_status)"
 assert_contains "@agent_attention" "$status" "status format reads @agent_attention"
 assert_contains "@tmux_attention_icon_blocked" "$status" "status format uses configurable icons"
+tab_icon="$(tmux_test show-option -gqv @tmux_attention_tab_icon)"
+assert_contains "@agent_attention" "$tab_icon" "tab icon prioritizes attention state"
+assert_contains "@agent_context_active" "$tab_icon" "tab icon reads active agent state"
+assert_contains "@tmux_attention_icon_working" "$tab_icon" "tab icon uses configurable working icon"
 context_status="$(tmux_test show-option -gqv @tmux_attention_context)"
 assert_contains "@agent_context_active" "$context_status" "context format reads active agent state"
 assert_contains "pane_current_path" "$context_status" "context format falls back to pane current path"
@@ -245,6 +249,16 @@ tmux_test set-option -gq @tmux_attention_clear_delay "3"
 
 assert_eq "CUSTOM" "$(tmux_test show-option -gqv @tmux_attention_icon_input)" "plugin preserves configured icon override"
 assert_eq "3" "$(tmux_test show-option -gqv @tmux_attention_clear_delay)" "plugin preserves configured delay override"
+
+tmux_test set-window-option -t "$pane" @agent_attention ''
+tmux_test set-window-option -t "$pane" @agent_context_active ''
+assert_eq "" "$(tmux_test display-message -p -t "$pane" '#{E:@tmux_attention_tab_icon}')" "tab icon is empty without attention or active agent"
+tmux_test set-window-option -t "$pane" @agent_context_active '1'
+assert_eq "󰚩" "$(tmux_test display-message -p -t "$pane" '#{E:@tmux_attention_tab_icon}')" "tab icon renders working agent"
+tmux_test set-window-option -t "$pane" @agent_attention blocked
+assert_eq "" "$(tmux_test display-message -p -t "$pane" '#{E:@tmux_attention_tab_icon}')" "attention icon takes precedence over working agent"
+tmux_test set-window-option -t "$pane" @agent_attention ''
+tmux_test set-window-option -t "$pane" @agent_context_active ''
 
 HOOK_TMP="$(mktemp -d "${TMPDIR:-/tmp}/tmux-attention-hooks.XXXXXX")"
 CLAUDE_SETTINGS="$HOOK_TMP/claude/settings.json"

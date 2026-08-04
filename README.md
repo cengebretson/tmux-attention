@@ -92,6 +92,7 @@ set -g @tmux_attention_icon_input "󱐋"
 set -g @tmux_attention_icon_blocked ""
 set -g @tmux_attention_icon_review "󰛨"
 set -g @tmux_attention_icon_done ""
+set -g @tmux_attention_icon_working "󰚩"
 set -g @tmux_attention_clear_delay "8"
 set -g @tmux_attention_clear_on_view "on"
 
@@ -104,6 +105,11 @@ Catppuccin example:
 set -g @catppuccin_window_text "#{E:@tmux_attention_status}#W"
 set -g @catppuccin_window_current_text "#{E:@tmux_attention_status}#W"
 ```
+
+For a single leading tab glyph, `#{E:@tmux_attention_tab_icon}` renders the
+highest-priority state: an attention icon first, then the working icon while an
+agent turn is active, otherwise nothing. This lets a custom format fall back to
+its normal window number only when the plugin has no state to show.
 
 Print the Catppuccin snippet:
 
