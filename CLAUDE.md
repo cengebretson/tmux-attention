@@ -9,15 +9,16 @@ See `README.md` for what the plugin does, its parts (TPM plugin, CLI, agent hook
 - `tmux-attention.tmux` — TPM entry: sets default `@tmux_attention_*` options, exports
   the `@tmux_attention_status` format, and installs clear-on-view hooks (all at index
   `[90]` on `after-select-window` / `client-attached` / `client-session-changed` /
-  `pane-focus-in`, so re-sourcing updates in place).
-- `scripts/tmux-attention` — POSIX-sh CLI: sets/clears the `@agent_attention` window
-  state (`input`, `blocked`, `review`, `done`), maps agent event names to states,
-  `get`/`list` in text or JSON, prints `status-format`/`catppuccin-format` snippets,
-  `doctor [--probe]`, `version`.
+  `pane-focus-in`, plus summary refresh on `after-kill-pane`; re-sourcing updates
+  each hook in place).
+- `scripts/tmux-attention` — POSIX-sh CLI: sets/clears authoritative
+  `@agent_pane_attention` state (`input`, `blocked`, `review`, `done`), derives
+  backward-compatible window summaries, maps agent event names to states,
+  `get`/`list` in text or JSON, prints status snippets, `doctor [--probe]`, `version`.
 - `scripts/clear-after-delay` — schedules the delayed marker clear. No-ops when the
-  window has no marker or `@tmux_attention_clear_on_view` is off; compares
-  `@agent_attention_updated_at` so a marker re-set during the delay survives; clears
-  all four `@agent_attention*` options together (matching the CLI's `clear`).
+  pane has no marker or `@tmux_attention_clear_on_view` is off; compares
+  `@agent_pane_attention_updated_at` so a marker re-set during the delay survives;
+  delegates to the CLI so the window summary is recomputed after a pane clear.
 - `scripts/setup` — installs agent hooks (via `install-hooks`) and a managed,
   marker-delimited status snippet in `~/.tmux.conf` (timestamped backups, pruned to five).
 - `scripts/install-hooks` — installs/uninstalls/reports Claude Code and Codex hook

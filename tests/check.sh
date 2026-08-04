@@ -119,24 +119,27 @@ assert_contains "client-attached[90]" "$(tmux_test show-hook -g client-attached)
 # switch-client (e.g. tmux-fzf-jump) fires neither of the above; these cover it.
 assert_contains "client-session-changed[90]" "$(tmux_test show-hook -g client-session-changed)" "client-session-changed hook is installed at stable index"
 assert_contains "pane-focus-in[90]" "$(tmux_test show-hook -g pane-focus-in)" "pane-focus-in hook is installed at stable index"
+assert_contains "after-kill-pane[90]" "$(tmux_test show-hook -g after-kill-pane)" "after-kill-pane refresh hook is installed at stable index"
 
-# clear-after-delay no-ops on a window with no marker (so frequent focus hooks
+# clear-after-delay no-ops on a pane with no marker (so frequent focus hooks
 # don't spawn a sleep). With a marker set, it schedules the clear.
-nomark_win="$(tmux_test display-message -p '#{window_id}')"
-tmux_test set-window-option -t "$nomark_win" @agent_attention ''
+nomark_pane="$(tmux_test display-message -p '#{pane_id}')"
+tmux_test set-option -p -t "$nomark_pane" @agent_pane_attention ''
 nomark_rc=0
-"$ROOT_DIR/scripts/clear-after-delay" "$nomark_win" >/dev/null 2>&1 || nomark_rc=$?
+"$ROOT_DIR/scripts/clear-after-delay" "$nomark_pane" >/dev/null 2>&1 || nomark_rc=$?
 assert_eq "0" "$nomark_rc" "clear-after-delay exits cleanly when no marker is set"
 
 pane="$(tmux_test display-message -p '#{pane_id}')"
 target_pane="$(tmux_test new-window -d -P -F '#{pane_id}' -n target)"
+other_pane="$(tmux_test split-window -d -t "$target_pane" -P -F '#{pane_id}')"
 
 tmux_test set-option -gq @tmux_attention_clear_delay "1"
-tmux_test set-window-option -t "$pane" @agent_attention input
+tmux_test set-option -p -t "$pane" @agent_pane_attention input
+tmux_test set-option -p -t "$pane" @agent_pane_attention_updated_at "$(date +%s)"
 "$ROOT_DIR/scripts/clear-after-delay" "$pane"
-tmux_test set-window-option -t "$pane" @agent_attention blocked
+tmux_test set-option -p -t "$pane" @agent_pane_attention blocked
 sleep 2
-assert_eq "blocked" "$(tmux_test show-window-option -t "$pane" -v @agent_attention)" "stale delayed clear does not erase a newer marker"
+assert_eq "blocked" "$(tmux_test show-options -pqv -t "$pane" @agent_pane_attention)" "stale delayed clear does not erase a newer pane marker"
 assert_not_contains "returned 1" "$(tmux_test show-messages)" "stale delayed clear does not emit a tmux command failure"
 tmux_test set-option -gqu @tmux_attention_clear_delay
 
@@ -144,42 +147,59 @@ tmux_test set-option -gqu @tmux_attention_clear_delay
 # (used by both the focus hooks and the CLI's post-set path) should no-op.
 tmux_test set-option -gq @tmux_attention_clear_on_view "off"
 tmux_test set-option -gq @tmux_attention_clear_delay "1"
-tmux_test set-window-option -t "$pane" @agent_attention review
+tmux_test set-option -p -t "$pane" @agent_pane_attention review
 "$ROOT_DIR/scripts/clear-after-delay" "$pane"
 sleep 2
-assert_eq "review" "$(tmux_test show-window-option -t "$pane" -v @agent_attention)" "clear-on-view off keeps the marker in place"
-tmux_test set-window-option -t "$pane" @agent_attention ''
+assert_eq "review" "$(tmux_test show-options -pqv -t "$pane" @agent_pane_attention)" "clear-on-view off keeps the pane marker in place"
+tmux_test set-option -p -t "$pane" @agent_pane_attention ''
 tmux_test set-option -gqu @tmux_attention_clear_delay
 tmux_test set-option -gq @tmux_attention_clear_on_view "on"
 
 TMUX_PANE="$pane" "$ROOT_DIR/scripts/tmux-attention" blocked
-assert_eq "blocked" "$(tmux_test show-window-option -t "$pane" -v @agent_attention)" "CLI sets blocked state"
+assert_eq "blocked" "$(tmux_test show-options -pqv -t "$pane" @agent_pane_attention)" "CLI sets pane-local blocked state"
+assert_eq "blocked" "$(tmux_test show-window-option -t "$pane" -v @agent_attention)" "CLI derives blocked window summary"
 
 TMUX_PANE="$pane" "$ROOT_DIR/scripts/tmux-attention" review
-assert_eq "review" "$(tmux_test show-window-option -t "$pane" -v @agent_attention)" "CLI sets review state"
+assert_eq "review" "$(tmux_test show-options -pqv -t "$pane" @agent_pane_attention)" "CLI sets pane-local review state"
 
 TMUX_PANE="$pane" "$ROOT_DIR/scripts/tmux-attention" clear
-assert_eq "" "$(tmux_test show-window-option -t "$pane" -v @agent_attention)" "CLI clears state"
+assert_eq "" "$(tmux_test show-options -pqv -t "$pane" @agent_pane_attention)" "CLI clears pane-local state"
+assert_eq "" "$(tmux_test show-window-option -t "$pane" -v @agent_attention)" "CLI clears derived window summary"
 
 TMUX_PANE= "$ROOT_DIR/scripts/tmux-attention" blocked --target "$target_pane"
-assert_eq "blocked" "$(tmux_test show-window-option -t "$target_pane" -v @agent_attention)" "CLI sets state on explicit target without TMUX_PANE"
+assert_eq "blocked" "$(tmux_test show-options -pqv -t "$target_pane" @agent_pane_attention)" "CLI sets pane state on explicit target without TMUX_PANE"
 
 "$ROOT_DIR/scripts/tmux-attention" --target "$target_pane" clear
-assert_eq "" "$(tmux_test show-window-option -t "$target_pane" -v @agent_attention)" "CLI clears explicit target before state argument"
+assert_eq "" "$(tmux_test show-options -pqv -t "$target_pane" @agent_pane_attention)" "CLI clears explicit pane target before state argument"
 
 "$ROOT_DIR/scripts/tmux-attention" input --target "$target_pane"
 "$ROOT_DIR/scripts/tmux-attention" turn-start --target "$target_pane" --project FLYWL-2533
-assert_eq "" "$(tmux_test show-window-option -t "$target_pane" -v @agent_attention)" "turn-start clears the attention marker"
-assert_eq "1" "$(tmux_test show-window-option -t "$target_pane" -v @agent_context_active)" "turn-start marks agent context active"
+assert_eq "" "$(tmux_test show-options -pqv -t "$target_pane" @agent_pane_attention)" "turn-start clears its pane attention marker"
+assert_eq "1" "$(tmux_test show-options -pqv -t "$target_pane" @agent_pane_context_active)" "turn-start marks its pane context active"
+assert_eq "1" "$(tmux_test show-window-option -t "$target_pane" -v @agent_context_active)" "turn-start derives active window summary"
 assert_eq "FLYWL-2533" "$(tmux_test show-window-option -t "$target_pane" -v @agent_context_project)" "turn-start stores an explicit project"
 assert_eq "FLYWL-2533" "$(tmux_test display-message -p -t "$target_pane" '#{E:@tmux_attention_context}')" "context format renders active project"
 
-other_pane="$(tmux_test split-window -d -t "$target_pane" -P -F '#{pane_id}')"
-"$ROOT_DIR/scripts/tmux-attention" turn-stop --target "$other_pane"
-assert_eq "1" "$(tmux_test show-window-option -t "$target_pane" -v @agent_context_active)" "turn-stop from another pane preserves active context"
+"$ROOT_DIR/scripts/tmux-attention" turn-start --target "$other_pane" --project ORC
+assert_eq "1" "$(tmux_test show-options -pqv -t "$target_pane" @agent_pane_context_active)" "first pane stays active when second agent starts"
+assert_eq "1" "$(tmux_test show-options -pqv -t "$other_pane" @agent_pane_context_active)" "second pane tracks its own active agent"
+
+"$ROOT_DIR/scripts/tmux-attention" review --target "$other_pane" --reason needs_review
+"$ROOT_DIR/scripts/tmux-attention" input --target "$target_pane" --reason approval_required
+assert_eq "review" "$(tmux_test show-options -pqv -t "$other_pane" @agent_pane_attention)" "second pane keeps its independent review state"
+assert_eq "input" "$(tmux_test show-options -pqv -t "$target_pane" @agent_pane_attention)" "first pane keeps its independent input state"
+assert_eq "input" "$(tmux_test show-window-option -t "$target_pane" -v @agent_attention)" "window summary chooses highest-priority pane state"
+assert_eq "approval_required" "$(tmux_test show-window-option -t "$target_pane" -v @agent_attention_reason)" "window summary carries winning pane reason"
+
+"$ROOT_DIR/scripts/tmux-attention" clear --target "$target_pane"
+assert_eq "review" "$(tmux_test show-window-option -t "$target_pane" -v @agent_attention)" "clearing one pane reveals the next-highest window state"
 
 "$ROOT_DIR/scripts/tmux-attention" turn-stop --target "$target_pane"
-assert_eq "" "$(tmux_test show-window-option -t "$target_pane" -v @agent_context_active)" "turn-stop clears active context"
+assert_eq "" "$(tmux_test show-options -pqv -t "$target_pane" @agent_pane_context_active)" "turn-stop clears only its pane context"
+assert_eq "1" "$(tmux_test show-window-option -t "$target_pane" -v @agent_context_active)" "window stays active while another pane agent works"
+
+"$ROOT_DIR/scripts/tmux-attention" turn-stop --target "$other_pane"
+assert_eq "" "$(tmux_test show-window-option -t "$target_pane" -v @agent_context_active)" "window summary clears after the final pane agent stops"
 expected_path="$(tmux_test display-message -p -t "$target_pane" '#{b:pane_current_path}')"
 assert_eq "$expected_path" "$(tmux_test display-message -p -t "$target_pane" '#{E:@tmux_attention_context}')" "context format falls back to pane directory"
 
@@ -191,6 +211,8 @@ assert_eq "tmux-attention" "$(tmux_test show-window-option -t "$target_pane" -v 
 assert_eq "blocked" "$("$ROOT_DIR/scripts/tmux-attention" get --target "$target_pane")" "CLI gets explicit target state"
 
 target_json="$("$ROOT_DIR/scripts/tmux-attention" get --target "$target_pane" --format json)"
+assert_contains '"scope":"pane"' "$target_json" "CLI JSON get reports pane scope"
+assert_contains "\"target\":\"$target_pane\"" "$target_json" "CLI JSON get includes pane target"
 assert_contains '"state":"blocked"' "$target_json" "CLI JSON get includes state"
 assert_contains '"source":"moshi"' "$target_json" "CLI JSON get includes source metadata"
 assert_contains '"reason":"approval_required"' "$target_json" "CLI JSON get includes reason metadata"
@@ -201,15 +223,16 @@ assert_contains " blocked" "$list_text" "CLI list includes marked windows"
 
 list_json="$("$ROOT_DIR/scripts/tmux-attention" list --session tmux-attention-test --format json)"
 assert_contains '"window_name":"target"' "$list_json" "CLI JSON list includes window name"
+assert_contains "\"pane_id\":\"$target_pane\"" "$list_json" "CLI JSON list includes pane identity"
 assert_contains '"source":"moshi"' "$list_json" "CLI JSON list includes metadata"
 
 "$ROOT_DIR/scripts/tmux-attention" event approval_required --target "$target_pane" --source moshi
-assert_eq "input" "$(tmux_test show-window-option -t "$target_pane" -v @agent_attention)" "CLI event maps approval_required to input"
+assert_eq "input" "$(tmux_test show-options -pqv -t "$target_pane" @agent_pane_attention)" "CLI event maps approval_required to pane-local input"
 event_json="$("$ROOT_DIR/scripts/tmux-attention" get --target "$target_pane" --format json)"
 assert_contains '"reason":"approval_required"' "$event_json" "CLI event stores default reason"
 
 "$ROOT_DIR/scripts/tmux-attention" event session_started --target "$target_pane" --source moshi
-assert_eq "" "$(tmux_test show-window-option -t "$target_pane" -v @agent_attention)" "CLI event maps session_started to clear"
+assert_eq "" "$(tmux_test show-options -pqv -t "$target_pane" @agent_pane_attention)" "CLI event maps session_started to pane-local clear"
 cleared_json="$("$ROOT_DIR/scripts/tmux-attention" get --target "$target_pane" --format json)"
 assert_contains '"source":null' "$cleared_json" "CLI clear removes source metadata"
 assert_contains '"reason":null' "$cleared_json" "CLI clear removes reason metadata"

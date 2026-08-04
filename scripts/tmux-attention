@@ -13,27 +13,30 @@ Usage: tmux-attention [input|blocked|review|done|clear] [--target <tmux-target>]
        tmux-attention list [--session <session>] [--format text|json]
        tmux-attention turn-start [--project <project>] [--target <tmux-target>]
        tmux-attention turn-stop [--target <tmux-target>]
+       tmux-attention refresh [--target <tmux-target>]
        tmux-attention status-format
        tmux-attention catppuccin-format
        tmux-attention context-format
        tmux-attention doctor [--probe]
        tmux-attention version
 
-Sets the tmux window option @agent_attention for the target tmux window.
+Sets pane-local agent state for the target tmux pane and derives a summary for
+its window.
 Without --target, uses the current tmux pane. Without a state, defaults to input.
 State and event writes accept optional --source and --reason metadata, stored
-as window options next to the marker. Neither may contain a tab or newline
+as pane options next to the marker. Neither may contain a tab or newline
 (both are used as field separators elsewhere, e.g. `list`).
 Event names include approval_required, blocked, stop_failure, hook_failure,
 review_required, needs_review, task_complete, session_started, plus
 tool_running and tool_finished as no-ops.
 
-turn-start marks an agent turn active for the target window and clears any
-attention marker. It derives the project from the pane's Git branch/repository
-or working directory unless --project is provided. turn-stop clears the agent
-context only when called from the pane that started it. The plugin's
-@tmux_attention_context format renders the project while active and falls back
-to the current pane directory otherwise.
+turn-start marks an agent turn active for the target pane and clears that
+pane's attention marker. It derives the project from the pane's Git
+branch/repository or working directory unless --project is provided. turn-stop
+clears only the target pane's agent context. Multiple panes in one window can
+therefore track agents independently. The plugin's @tmux_attention_context
+format renders the most recently active project while any pane is working and
+falls back to the current pane directory otherwise.
 EOF
 }
 
@@ -107,10 +110,15 @@ doctor() {
 		if [ -z "${TMUX_PANE:-}" ] || ! command -v tmux >/dev/null 2>&1; then
 			check_warn "marker probe skipped (not running inside tmux)"
 		else
-			previous="$(tmux show-options -w -t "$TMUX_PANE" -v @agent_attention 2>/dev/null || printf '')"
-			tmux set-window-option -q -t "$TMUX_PANE" @agent_attention review
+			previous="$(tmux show-options -p -t "$TMUX_PANE" -v @agent_pane_attention 2>/dev/null || printf '')"
+			tmux set-option -pq -t "$TMUX_PANE" @agent_pane_attention review
+			previous_target="$target"
+			target="$TMUX_PANE"
+			recompute_window_summary
 			rendered="$(tmux display-message -p -t "$TMUX_PANE" '#{E:@tmux_attention_status}' 2>/dev/null || printf '')"
-			tmux set-window-option -q -t "$TMUX_PANE" @agent_attention "$previous"
+			tmux set-option -pq -t "$TMUX_PANE" @agent_pane_attention "$previous"
+			recompute_window_summary
+			target="$previous_target"
 			case "$rendered" in
 				"")
 					check_warn "marker probe rendered nothing (is #{E:@tmux_attention_status} in your status line?)"
@@ -167,22 +175,104 @@ set_attention() {
 	# commands): these run on every hook event, so avoid four round trips.
 	case "$attention_state" in
 		clear|none|off)
-			tmux set-window-option -q -t "$target" @agent_attention '' \; \
-				set-window-option -q -t "$target" @agent_attention_source '' \; \
-				set-window-option -q -t "$target" @agent_attention_reason '' \; \
-				set-window-option -q -t "$target" @agent_attention_updated_at ''
-			return 0
+			tmux set-option -pq -t "$target" @agent_pane_attention '' \; \
+				set-option -pq -t "$target" @agent_pane_attention_source '' \; \
+				set-option -pq -t "$target" @agent_pane_attention_reason '' \; \
+				set-option -pq -t "$target" @agent_pane_attention_updated_at ''
+			recompute_window_summary
+			return $?
 			;;
 	esac
 
-	tmux set-window-option -q -t "$target" @agent_attention "$attention_state" \; \
-		set-window-option -q -t "$target" @agent_attention_source "$source" \; \
-		set-window-option -q -t "$target" @agent_attention_reason "$reason" \; \
-		set-window-option -q -t "$target" @agent_attention_updated_at "$(date +%s)"
+	tmux set-option -pq -t "$target" @agent_pane_attention "$attention_state" \; \
+		set-option -pq -t "$target" @agent_pane_attention_source "$source" \; \
+		set-option -pq -t "$target" @agent_pane_attention_reason "$reason" \; \
+		set-option -pq -t "$target" @agent_pane_attention_updated_at "$(date +%s)"
+	recompute_window_summary
 }
 
-get_option() {
-	tmux show-options -wqv -t "$target" "$1" 2>/dev/null || printf ''
+get_pane_option() {
+	tmux show-options -pqv -t "$target" "$1" 2>/dev/null || printf ''
+}
+
+recompute_window_summary() {
+	window_id="$(tmux display-message -p -t "$target" '#{window_id}' 2>/dev/null)" || {
+		printf 'tmux-attention: invalid target: %s\n' "$target" >&2
+		return 1
+	}
+	tab="$(printf '\t')"
+	pane_rows="$(tmux list-panes -t "$window_id" -F "#{pane_id}${tab}#{@agent_pane_attention}${tab}#{@agent_pane_attention_source}${tab}#{@agent_pane_attention_reason}${tab}#{@agent_pane_attention_updated_at}${tab}#{@agent_pane_context_active}${tab}#{@agent_pane_context_project}${tab}#{@agent_pane_context_updated_at}" 2>/dev/null)" || return 1
+
+	attention_row="$(
+		printf '%s\n' "$pane_rows" |
+			awk -F '\t' '
+				function rank(state) {
+					if (state == "input") return 4
+					if (state == "blocked") return 3
+					if (state == "review") return 2
+					if (state == "done") return 1
+					return 0
+				}
+				{
+					state_rank = rank($2)
+					if (state_rank > best_rank || (state_rank == best_rank && state_rank > 0 && ($5 + 0) > best_time)) {
+						best_rank = state_rank
+						best_time = $5 + 0
+						best_state = $2
+						best_source = $3
+						best_reason = $4
+						best_updated_at = $5
+					}
+				}
+				END {
+					if (best_rank > 0) printf "%s\n%s\n%s\n%s\n", best_state, best_source, best_reason, best_updated_at
+				}
+			'
+	)"
+	attention_state=""
+	attention_source=""
+	attention_reason=""
+	attention_updated_at=""
+	if [ -n "$attention_row" ]; then
+		attention_state="$(printf '%s\n' "$attention_row" | sed -n '1p')"
+		attention_source="$(printf '%s\n' "$attention_row" | sed -n '2p')"
+		attention_reason="$(printf '%s\n' "$attention_row" | sed -n '3p')"
+		attention_updated_at="$(printf '%s\n' "$attention_row" | sed -n '4p')"
+	fi
+
+	context_row="$(
+		printf '%s\n' "$pane_rows" |
+			awk -F '\t' '$6 == "1" && ($8 + 0) >= best_time {
+				best_time = $8 + 0
+				best_project = $7
+				best_pane = $1
+				best_updated_at = $8
+			}
+			END {
+				if (best_pane != "") printf "%s\n%s\n%s\n", best_project, best_pane, best_updated_at
+			}'
+	)"
+	context_active=""
+	context_project=""
+	context_pane=""
+	context_updated_at=""
+	if [ -n "$context_row" ]; then
+		context_active="1"
+		context_project="$(printf '%s\n' "$context_row" | sed -n '1p')"
+		context_pane="$(printf '%s\n' "$context_row" | sed -n '2p')"
+		context_updated_at="$(printf '%s\n' "$context_row" | sed -n '3p')"
+	fi
+
+	# These window options are a derived compatibility/status summary. Pane
+	# options above remain authoritative when more than one agent shares a window.
+	tmux set-window-option -q -t "$window_id" @agent_attention "$attention_state" \; \
+		set-window-option -q -t "$window_id" @agent_attention_source "$attention_source" \; \
+		set-window-option -q -t "$window_id" @agent_attention_reason "$attention_reason" \; \
+		set-window-option -q -t "$window_id" @agent_attention_updated_at "$attention_updated_at" \; \
+		set-window-option -q -t "$window_id" @agent_context_active "$context_active" \; \
+		set-window-option -q -t "$window_id" @agent_context_project "$context_project" \; \
+		set-window-option -q -t "$window_id" @agent_context_pane "$context_pane" \; \
+		set-window-option -q -t "$window_id" @agent_context_updated_at "$context_updated_at"
 }
 
 derive_project() {
@@ -217,48 +307,37 @@ derive_project() {
 }
 
 set_turn_start() {
-	context_fields="$(tmux display-message -p -t "$target" "#{pane_id}	#{pane_current_path}" 2>/dev/null)" || {
+	context_path="$(tmux display-message -p -t "$target" '#{pane_current_path}' 2>/dev/null)" || {
 		printf 'tmux-attention: invalid target: %s\n' "$target" >&2
 		return 1
 	}
-	context_tab="$(printf '\t')"
-	context_pane="${context_fields%%"$context_tab"*}"
-	context_path="${context_fields#*"$context_tab"}"
 
 	if [ -z "$project" ]; then
 		project="$(derive_project "$context_path")"
 	fi
 
-	# A submitted prompt both begins the active turn and resolves any previous
-	# input marker. Keep this to one tmux round trip because every prompt uses it.
-	tmux set-window-option -q -t "$target" @agent_attention '' \; \
-		set-window-option -q -t "$target" @agent_attention_source '' \; \
-		set-window-option -q -t "$target" @agent_attention_reason '' \; \
-		set-window-option -q -t "$target" @agent_attention_updated_at '' \; \
-		set-window-option -q -t "$target" @agent_context_active '1' \; \
-		set-window-option -q -t "$target" @agent_context_project "$project" \; \
-		set-window-option -q -t "$target" @agent_context_pane "$context_pane" \; \
-		set-window-option -q -t "$target" @agent_context_updated_at "$(date +%s)"
+	# A submitted prompt both begins this pane's active turn and resolves this
+	# pane's previous input marker.
+	tmux set-option -pq -t "$target" @agent_pane_attention '' \; \
+		set-option -pq -t "$target" @agent_pane_attention_source '' \; \
+		set-option -pq -t "$target" @agent_pane_attention_reason '' \; \
+		set-option -pq -t "$target" @agent_pane_attention_updated_at '' \; \
+		set-option -pq -t "$target" @agent_pane_context_active '1' \; \
+		set-option -pq -t "$target" @agent_pane_context_project "$project" \; \
+		set-option -pq -t "$target" @agent_pane_context_updated_at "$(date +%s)"
+	recompute_window_summary
 }
 
 set_turn_stop() {
-	context_pane="$(tmux display-message -p -t "$target" '#{pane_id}' 2>/dev/null)" || {
+	tmux display-message -p -t "$target" '#{pane_id}' >/dev/null 2>&1 || {
 		printf 'tmux-attention: invalid target: %s\n' "$target" >&2
 		return 1
 	}
-	context_owner="$(get_option @agent_context_pane)"
 
-	# A stale Stop from another pane must not clear a newer agent in this
-	# window. The plugin remains window-scoped, but the owning pane controls the
-	# lifecycle of its context.
-	if [ -n "$context_owner" ] && [ "$context_owner" != "$context_pane" ]; then
-		return 0
-	fi
-
-	tmux set-window-option -q -t "$target" @agent_context_active '' \; \
-		set-window-option -q -t "$target" @agent_context_project '' \; \
-		set-window-option -q -t "$target" @agent_context_pane '' \; \
-		set-window-option -q -t "$target" @agent_context_updated_at ''
+	tmux set-option -pq -t "$target" @agent_pane_context_active '' \; \
+		set-option -pq -t "$target" @agent_pane_context_project '' \; \
+		set-option -pq -t "$target" @agent_pane_context_updated_at ''
+	recompute_window_summary
 }
 
 print_get() {
@@ -266,14 +345,17 @@ print_get() {
 		return 1
 	fi
 
-	window_id="$(tmux display-message -p -t "$target" '#{window_id}' 2>/dev/null)" || {
+	tab="$(printf '\t')"
+	target_fields="$(tmux display-message -p -t "$target" "#{pane_id}${tab}#{window_id}" 2>/dev/null)" || {
 		printf 'tmux-attention: invalid target: %s\n' "$target" >&2
 		return 1
 	}
-	state_value="$(get_option @agent_attention)"
-	source_value="$(get_option @agent_attention_source)"
-	reason_value="$(get_option @agent_attention_reason)"
-	updated_at_value="$(get_option @agent_attention_updated_at)"
+	pane_id="${target_fields%%"$tab"*}"
+	window_id="${target_fields#*"$tab"}"
+	state_value="$(get_pane_option @agent_pane_attention)"
+	source_value="$(get_pane_option @agent_pane_attention_source)"
+	reason_value="$(get_pane_option @agent_pane_attention_reason)"
+	updated_at_value="$(get_pane_option @agent_pane_attention_updated_at)"
 
 	case "$format" in
 		text)
@@ -282,7 +364,9 @@ print_get() {
 			fi
 			;;
 		json)
-			printf '{"scope":"window","target":'
+			printf '{"scope":"pane","target":'
+			json_value "$pane_id"
+			printf ',"window_id":'
 			json_value "$window_id"
 			printf ',"state":'
 			json_value "$state_value"
@@ -300,26 +384,26 @@ print_get() {
 print_list() {
 	tab="$(printf '\t')"
 	if [ -n "$session" ]; then
-		list_output="$(tmux list-windows -t "$session" -F "#{session_name}${tab}#{window_index}${tab}#{window_id}${tab}#{window_name}${tab}#{@agent_attention}${tab}#{@agent_attention_source}${tab}#{@agent_attention_reason}${tab}#{@agent_attention_updated_at}" 2>/dev/null)" || {
+		list_output="$(tmux list-panes -s -t "$session" -F "#{session_name}${tab}#{window_index}${tab}#{window_id}${tab}#{window_name}${tab}#{pane_index}${tab}#{pane_id}${tab}#{@agent_pane_attention}${tab}#{@agent_pane_attention_source}${tab}#{@agent_pane_attention_reason}${tab}#{@agent_pane_attention_updated_at}" 2>/dev/null)" || {
 			printf 'tmux-attention: invalid session: %s\n' "$session" >&2
 			return 1
 		}
 	else
-		list_output="$(tmux list-windows -a -F "#{session_name}${tab}#{window_index}${tab}#{window_id}${tab}#{window_name}${tab}#{@agent_attention}${tab}#{@agent_attention_source}${tab}#{@agent_attention_reason}${tab}#{@agent_attention_updated_at}" 2>/dev/null)" || return 1
+		list_output="$(tmux list-panes -a -F "#{session_name}${tab}#{window_index}${tab}#{window_id}${tab}#{window_name}${tab}#{pane_index}${tab}#{pane_id}${tab}#{@agent_pane_attention}${tab}#{@agent_pane_attention_source}${tab}#{@agent_pane_attention_reason}${tab}#{@agent_pane_attention_updated_at}" 2>/dev/null)" || return 1
 	fi
 
 	case "$format" in
 		text)
-			printf '%s\n' "$list_output" | while IFS="$(printf '\t')" read -r session_name window_index _window_id _window_name state_value _source_value _reason_value _updated_at_value; do
+			printf '%s\n' "$list_output" | while IFS="$(printf '\t')" read -r session_name window_index _window_id _window_name pane_index _pane_id state_value _source_value _reason_value _updated_at_value; do
 				if [ -n "$state_value" ]; then
-					printf '%s:%s %s\n' "$session_name" "$window_index" "$state_value"
+					printf '%s:%s.%s %s\n' "$session_name" "$window_index" "$pane_index" "$state_value"
 				fi
 			done
 			;;
 		json)
 			printf '['
 			first="true"
-			printf '%s\n' "$list_output" | while IFS="$(printf '\t')" read -r session_name window_index window_id window_name state_value source_value reason_value updated_at_value; do
+			printf '%s\n' "$list_output" | while IFS="$(printf '\t')" read -r session_name window_index window_id window_name pane_index pane_id state_value source_value reason_value updated_at_value; do
 				if [ -z "$state_value" ]; then
 					continue
 				fi
@@ -336,6 +420,10 @@ print_list() {
 				json_value "$window_id"
 				printf ',"window_name":'
 				json_value "$window_name"
+				printf ',"pane_index":'
+				json_value "$pane_index"
+				printf ',"pane_id":'
+				json_value "$pane_id"
 				printf ',"state":'
 				json_value "$state_value"
 				printf ',"source":'
@@ -526,7 +614,7 @@ case "$state" in
 			exit 2
 		fi
 		;;
-	get|list|turn-start|turn-stop)
+	get|list|turn-start|turn-stop|refresh)
 		;;
 	status-format|format)
 		cat <<'EOF'
@@ -631,6 +719,10 @@ if [ -z "$target" ]; then
 fi
 
 case "$state" in
+	refresh)
+		recompute_window_summary
+		exit $?
+		;;
 	turn-start)
 		set_turn_start
 		exit $?
@@ -649,12 +741,16 @@ case "$state" in
 		;;
 esac
 
-# One display-message round trip for both flags; split on the space.
-attached_active="$(tmux display-message -p -t "$target" '#{session_attached} #{window_active}' 2>/dev/null || printf '0 0')"
-attached="${attached_active% *}"
-active="${attached_active#* }"
+# Only a marker on the pane actually being viewed should auto-clear. Another
+# pane may be visible in the same active window while retaining its own marker.
+attached_active="$(tmux display-message -p -t "$target" '#{session_attached} #{window_active} #{pane_active}' 2>/dev/null || printf '0 0 0')"
+# shellcheck disable=SC2086  # intentional split of three space-delimited flags
+set -- $attached_active
+attached="${1:-0}"
+active_window="${2:-0}"
+active_pane="${3:-0}"
 
-if [ "$attached" != "0" ] && [ "$active" = "1" ]; then
+if [ "$attached" != "0" ] && [ "$active_window" = "1" ] && [ "$active_pane" = "1" ]; then
 	script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 	"$script_dir/clear-after-delay" "$target"
 fi

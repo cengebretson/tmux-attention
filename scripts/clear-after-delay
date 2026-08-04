@@ -6,13 +6,13 @@ if [ -z "$target" ] || ! command -v tmux >/dev/null 2>&1; then
 	exit 0
 fi
 
-# Read the marker state and its timestamp in one tmux call. No marker on this
-# window? Nothing to clear. This keeps the high-frequency pane-focus-in /
+# Read the pane marker state and its timestamp in one tmux call. No marker on
+# this pane? Nothing to clear. This keeps the high-frequency pane-focus-in /
 # select-window hooks from spawning a sleep on every event. The timestamp is
 # captured alongside the state because comparing only the state string would
 # clear a marker that was re-set with the *same* state during the sleep.
 tab="$(printf '\t')"
-marker="$(tmux display-message -p -t "$target" "#{@agent_attention}${tab}#{@agent_attention_updated_at}" 2>/dev/null || printf '')"
+marker="$(tmux display-message -p -t "$target" "#{@agent_pane_attention}${tab}#{@agent_pane_attention_updated_at}" 2>/dev/null || printf '')"
 current="${marker%%"$tab"*}"
 updated_at="${marker#*"$tab"}"
 if [ -z "$current" ]; then
@@ -42,10 +42,11 @@ quote_for_single_quotes() {
 escaped_target="$(quote_for_single_quotes "$target")"
 escaped_current="$(quote_for_single_quotes "$current")"
 escaped_updated_at="$(quote_for_single_quotes "$updated_at")"
-# Clear all four options together, matching the CLI's `clear`, so no stale
-# source/reason/updated_at survives an auto-clear. The four clears run as one
-# tmux invocation (';'-separated commands); the inner `|| true` keeps a
-# vanished window from emitting a tmux "returned 1" message.
+script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+attention_cli="$(quote_for_single_quotes "$script_dir/tmux-attention")"
+# Delegate the clear to the CLI so it clears the pane options and recomputes the
+# derived window summary. The inner `|| true` keeps a vanished pane from
+# emitting a tmux "returned 1" message.
 #
 # The outer `|| true` (and the trailing `exit 0`) guard the *scheduling* call
 # itself: this script is fired by the client-attached / client-session-changed
@@ -55,6 +56,6 @@ escaped_updated_at="$(quote_for_single_quotes "$updated_at")"
 # the script via `run-shell -b`, it would surface as
 # `'"…/clear-after-delay" "@N"' returned 1`. A failed schedule is not
 # actionable (the next focus event reschedules), so never propagate it.
-tmux run-shell -b "sleep $delay; current=\$(tmux show-options -wqv -t '$escaped_target' @agent_attention 2>/dev/null || printf ''); updated=\$(tmux show-options -wqv -t '$escaped_target' @agent_attention_updated_at 2>/dev/null || printf ''); if [ \"\$current\" = '$escaped_current' ] && [ \"\$updated\" = '$escaped_updated_at' ]; then tmux set-window-option -q -t '$escaped_target' @agent_attention '' ';' set-window-option -q -t '$escaped_target' @agent_attention_source '' ';' set-window-option -q -t '$escaped_target' @agent_attention_reason '' ';' set-window-option -q -t '$escaped_target' @agent_attention_updated_at '' || true; fi" || true
+tmux run-shell -b "sleep $delay; current=\$(tmux show-options -pqv -t '$escaped_target' @agent_pane_attention 2>/dev/null || printf ''); updated=\$(tmux show-options -pqv -t '$escaped_target' @agent_pane_attention_updated_at 2>/dev/null || printf ''); if [ \"\$current\" = '$escaped_current' ] && [ \"\$updated\" = '$escaped_updated_at' ]; then '$attention_cli' clear --target '$escaped_target' >/dev/null 2>&1 || true; fi" || true
 
 exit 0

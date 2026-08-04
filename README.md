@@ -162,11 +162,14 @@ The command defaults to `input`. Without `--target`, it uses the current tmux
 pane. If it is run outside tmux without an explicit target, it falls back to a
 terminal bell.
 
-Markers are window-scoped: `tmux-attention` writes the `@agent_attention` window
-option for the target window. `--target` accepts the same tmux targets as
-`set-window-option -t`, such as a pane id (`%12`) or window target
-(`session:window`). If multiple agent panes share one tmux window, the most
-recent state wins for that window.
+Markers are pane-scoped: `tmux-attention` writes authoritative state for the
+target pane. `--target` accepts a pane id (`%12`) or another tmux target that
+resolves to a pane. Multiple agent panes in one window retain independent state.
+
+The plugin also derives the existing window options for status-line
+compatibility. The window summary chooses `input`, then `blocked`, `review`, and
+`done`; when no pane needs attention, it reports working while any pane has an
+active turn. Ties at the same attention priority use the newest marker.
 
 Writes can include optional metadata:
 
@@ -174,13 +177,18 @@ Writes can include optional metadata:
 tmux-attention input --source moshi --reason approval_required
 ```
 
-Metadata is stored in separate window options:
+Authoritative metadata is stored in separate pane options:
 
 | Option | Meaning |
 |--------|---------|
-| `@agent_attention_source` | integration or tool that set the marker |
-| `@agent_attention_reason` | event or reason that produced the marker |
-| `@agent_attention_updated_at` | Unix timestamp for the last marker write |
+| `@agent_pane_attention` | pane attention state |
+| `@agent_pane_attention_source` | integration or tool that set the marker |
+| `@agent_pane_attention_reason` | event or reason that produced the marker |
+| `@agent_pane_attention_updated_at` | Unix timestamp for the last marker write |
+
+The derived `@agent_attention`, `@agent_attention_source`,
+`@agent_attention_reason`, and `@agent_attention_updated_at` window options
+mirror the winning pane for existing tmux status formats.
 
 Use `get` or `list` for scripts and pickers:
 
@@ -233,18 +241,21 @@ display.
 2. Git repository name
 3. Current directory name
 
-Use `--project` to override the derived label. Context is window-scoped, like
-attention state, but records its owning pane so a stale `Stop` from another
-pane cannot clear a newer agent turn.
+Use `--project` to override the derived label. Context is pane-scoped, so each
+pane can run and stop an agent independently. The window summary uses the most
+recently started agent while any pane remains active.
 
-The context window options are:
+The authoritative context pane options are:
 
 | Option | Meaning |
 |--------|---------|
-| `@agent_context_active` | `1` while an agent turn is running |
-| `@agent_context_project` | derived or supplied project label |
-| `@agent_context_pane` | pane that owns the active context |
-| `@agent_context_updated_at` | Unix timestamp for the latest turn start |
+| `@agent_pane_context_active` | `1` while this pane's agent turn is running |
+| `@agent_pane_context_project` | derived or supplied project label |
+| `@agent_pane_context_updated_at` | Unix timestamp for this pane's latest turn start |
+
+The derived `@agent_context_active`, `@agent_context_project`,
+`@agent_context_pane`, and `@agent_context_updated_at` window options preserve
+the existing status-format contract.
 
 ## Agent Hooks
 
@@ -260,10 +271,10 @@ installation and status-line config:
 See [docs/hooks.md](docs/hooks.md) for exact hook files, events, and lower-level
 `install-hooks` commands.
 
-Prompt-submit hooks call `turn-start`, which also clears the previous attention
-marker. Stop hooks call `turn-stop`, returning the context format to its PWD
-fallback. Permission and failure hooks continue to set the existing attention
-states.
+Prompt-submit hooks call `turn-start`, which also clears that pane's previous
+attention marker. Stop hooks call `turn-stop` for that pane. The window context
+returns to its PWD fallback only after the final pane agent stops. Permission
+and failure hooks set attention on their originating pane.
 
 ## Test
 

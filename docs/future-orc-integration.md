@@ -7,10 +7,10 @@ tools without breaking the current plugin behavior.
 The current implementation should remain valid:
 
 - `tmux-attention input|blocked|review|done|clear` keeps working.
-- The window option `@agent_attention` remains the canonical rendered marker.
+- The window option `@agent_attention` remains the canonical rendered summary.
 - `@tmux_attention_status` keeps rendering in tmux status lines.
 - Existing Claude/Codex hooks keep calling the same CLI states.
-- `tmux-fzf-jump` and existing tmux status integrations should not need changes.
+- Existing tmux status integrations should not need changes.
 
 ## Goal
 
@@ -21,16 +21,17 @@ tmux setup:
 - tmux status renders attention state;
 - picker/dashboard tools can query attention state;
 - workflow tools such as `orc` can optionally set or clear attention state;
-- future pane-scoped state can exist without breaking current window-scoped
-  behavior.
+- pane-scoped state can support multiple agents without breaking window-scoped
+  status rendering.
 
 ## Current contract
 
-Today, attention is window-scoped:
+Today, attention is authoritative per pane, with a derived window summary:
 
 ```sh
-tmux set-window-option -q -t "$TMUX_PANE" @agent_attention "$state"
-tmux show-options -w -t "$target" -v @agent_attention
+tmux set-option -pq -t "$TMUX_PANE" @agent_pane_attention "$state"
+tmux show-options -p -t "$target" -v @agent_pane_attention
+tmux show-options -w -t "$target" -v @agent_attention # derived summary
 ```
 
 Supported states:
@@ -69,8 +70,8 @@ tmux-attention get --format json
 
 Behavior:
 
-- `get` defaults to the current pane/window when inside tmux.
-- `--target` accepts any tmux target that `show-options -w -t` accepts.
+- `get` defaults to the current pane when inside tmux.
+- `--target` accepts a pane id or another tmux target that resolves to a pane.
 - Missing or empty attention prints nothing in text mode and exits `0`.
 - Invalid target exits non-zero with a short error on stderr.
 
@@ -84,8 +85,9 @@ JSON output:
 
 ```json
 {
-  "scope": "window",
-  "target": "@3",
+  "scope": "pane",
+  "target": "%12",
+  "window_id": "@3",
   "state": "blocked",
   "source": "agent",
   "updated_at": null
@@ -109,7 +111,8 @@ having to run from that window.
 Rules:
 
 - Existing no-flag behavior remains unchanged.
-- `--target` still writes the same window option by default.
+- `--target` writes pane-local authoritative state and refreshes its window
+  summary.
 - `clear`, `none`, and `off` still clear the marker.
 
 ### Machine-readable list API
@@ -161,42 +164,29 @@ stable tmux format helpers:
 The current status string can keep using icons only. Picker/dashboard tools may
 want text labels.
 
-## Optional pane-scoped future
+## Pane scope and window compatibility
 
-Window-scoped state is a good default and should stay the compatibility layer.
-Pane-scoped state could be added later for windows that run multiple agents.
-
-Possible options:
+Pane-scoped state is authoritative for windows that run multiple agents:
 
 ```tmux
-@agent_attention              # existing window-scoped state
-@agent_attention_pane_<id>    # future pane-scoped state, if needed
-```
-
-Better CLI shape:
-
-```sh
-tmux-attention blocked --scope pane
-tmux-attention blocked --scope window
-tmux-attention get --scope pane --target %12
-tmux-attention list --scope pane
+@agent_pane_attention         # authoritative pane state
+@agent_attention              # derived window summary
 ```
 
 Compatibility rules:
 
-- Default write scope remains `window`.
-- Default render scope remains `window`.
-- Pane-scoped state can roll up to window-scoped rendering when configured.
+- Default write and read scope is `pane`.
+- Default status render scope remains the derived window summary.
+- Pane state always rolls up to window-scoped rendering.
 - Existing `@agent_attention` status snippets keep working forever.
 
-Rollup policy could be configurable:
+The current rollup policy is:
 
-```tmux
-set -g @tmux_attention_rollup "blocked,input,review,done"
+```text
+input > blocked > review > done > working
 ```
 
-The first matching pane state in the configured priority order becomes the
-window marker.
+At equal priority, the newest pane marker supplies the summary metadata.
 
 ## Orc integration
 
@@ -309,11 +299,11 @@ Metadata can be stored in separate tmux options so the existing
 - Add JSON output fields.
 - Keep status rendering unchanged by default.
 
-### Phase 5: pane-scoped state
+### Phase 5: pane-scoped state (delivered)
 
-- Add `--scope pane|window`.
-- Add configurable rollup.
-- Keep default scope as `window`.
+- Store authoritative state as native pane options.
+- Keep derived window options as the compatibility rendering layer.
+- Recompute the window with fixed attention priority after every pane change.
 
 ## Open questions
 
@@ -321,5 +311,4 @@ Metadata can be stored in separate tmux options so the existing
 - Should `get` print `clear`, `none`, or empty text for no marker?
 - Should metadata expire when clear-on-view clears the marker?
 - Should list output include windows with no marker when requested?
-- Should pane-scoped state be stored as per-pane options if tmux supports them
-  cleanly, or as window options keyed by pane id?
+- Should the fixed window rollup priority become configurable?

@@ -6,6 +6,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Make attention and active-agent context authoritative per pane, allowing
+  multiple agents to work independently in one window. Existing window options
+  remain as derived summaries for status integrations, using
+  `input > blocked > review > done > working` priority.
+- Clear-on-view now clears only the pane actually viewed and recomputes the
+  window summary, preserving attention in other panes.
+- `get` and `list` now report pane-scoped state and pane identity.
+
 ## [0.5.4] - 2026-08-03
 
 ### Added
