@@ -6,6 +6,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Add `turn-done`, an atomic completed-turn transition that clears pane-local
+  active context and sets a `done` marker with response-ready metadata.
+
+### Changed
+
+- Generated Claude Code and Codex `Stop` hooks now call `turn-done`, so both
+  surfaces show the same check marker when an agent response is ready.
+
 ## [0.6.0] - 2026-08-03
 
 ### Changed

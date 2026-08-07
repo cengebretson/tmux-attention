@@ -203,7 +203,20 @@ assert_eq "" "$(tmux_test show-window-option -t "$target_pane" -v @agent_context
 expected_path="$(tmux_test display-message -p -t "$target_pane" '#{b:pane_current_path}')"
 assert_eq "$expected_path" "$(tmux_test display-message -p -t "$target_pane" '#{E:@tmux_attention_context}')" "context format falls back to pane directory"
 
+"$ROOT_DIR/scripts/tmux-attention" clear --target "$other_pane"
+"$ROOT_DIR/scripts/tmux-attention" turn-start --target "$target_pane" --project RESPONSE-READY
+"$ROOT_DIR/scripts/tmux-attention" turn-done --target "$target_pane" --source codex --reason response_ready
+assert_eq "" "$(tmux_test show-options -pqv -t "$target_pane" @agent_pane_context_active)" "turn-done clears pane context"
+assert_eq "" "$(tmux_test show-options -pqv -t "$target_pane" @agent_pane_context_project)" "turn-done clears pane project"
+assert_eq "done" "$(tmux_test show-options -pqv -t "$target_pane" @agent_pane_attention)" "turn-done sets pane-local done state"
+assert_eq "codex" "$(tmux_test show-options -pqv -t "$target_pane" @agent_pane_attention_source)" "turn-done records integration source"
+assert_eq "response_ready" "$(tmux_test show-options -pqv -t "$target_pane" @agent_pane_attention_reason)" "turn-done records response-ready reason"
+assert_eq "done" "$(tmux_test show-window-option -t "$target_pane" -v @agent_attention)" "turn-done derives done window summary"
+assert_eq "" "$(tmux_test show-window-option -t "$target_pane" -v @agent_context_active)" "turn-done clears derived window context"
+assert_eq "$expected_path" "$(tmux_test display-message -p -t "$target_pane" '#{E:@tmux_attention_context}')" "turn-done restores pane-directory context"
+
 "$ROOT_DIR/scripts/tmux-attention" turn-start --target "$target_pane"
+assert_eq "" "$(tmux_test show-options -pqv -t "$target_pane" @agent_pane_attention)" "next turn-start clears response-ready marker"
 assert_eq "tmux-attention" "$(tmux_test show-window-option -t "$target_pane" -v @agent_context_project)" "turn-start derives the Git repository name"
 "$ROOT_DIR/scripts/tmux-attention" turn-stop --target "$target_pane"
 
@@ -343,7 +356,14 @@ assert_contains "/opt/tmux-attention/tmux-attention" \
 	"$absolute_print" "managed command keeps an absolute CLI path outside \$HOME"
 assert_contains "tmux-attention turn-start" "$absolute_print" "Claude hooks start agent context"
 assert_not_contains "--agent" "$absolute_print" "Claude hooks do not send agent identity"
-assert_contains "turn-stop" "$absolute_print" "Claude hooks stop agent context"
+assert_contains "turn-done --source claude --reason response_ready" "$absolute_print" "Claude Stop hook marks a completed response"
+assert_not_contains "turn-stop" "$absolute_print" "Claude Stop hook uses the atomic completed-turn transition"
+
+absolute_codex_print="$(
+	TMUX_ATTENTION_CLI="/opt/tmux-attention/tmux-attention" \
+		"$ROOT_DIR/scripts/install-hooks" --print codex
+)"
+assert_contains "turn-done --source codex --reason response_ready" "$absolute_codex_print" "Codex Stop hook marks a completed response"
 
 TMUX_ATTENTION_CLAUDE_SETTINGS="$CLAUDE_SETTINGS" \
 TMUX_ATTENTION_CODEX_HOOKS="$CODEX_HOOKS" \

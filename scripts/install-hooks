@@ -144,7 +144,10 @@ CLAUDE_HOOKS = {
             "hooks": [
                 {
                     "type": "command",
-                    "command": command("turn-stop", "claude:turn-stop"),
+                    "command": command(
+                        "turn-done --source claude --reason response_ready",
+                        "claude:turn-done",
+                    ),
                 }
             ],
         }
@@ -178,7 +181,10 @@ CODEX_HOOKS = {
             "hooks": [
                 {
                     "type": "command",
-                    "command": command("turn-stop", "codex:turn-stop"),
+                    "command": command(
+                        "turn-done --source codex --reason response_ready",
+                        "codex:turn-done",
+                    ),
                 }
             ],
         }

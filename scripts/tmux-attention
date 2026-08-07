@@ -13,6 +13,8 @@ Usage: tmux-attention [input|blocked|review|done|clear] [--target <tmux-target>]
        tmux-attention list [--session <session>] [--format text|json]
        tmux-attention turn-start [--project <project>] [--target <tmux-target>]
        tmux-attention turn-stop [--target <tmux-target>]
+       tmux-attention turn-done [--target <tmux-target>]
+                                [--source <source>] [--reason <reason>]
        tmux-attention refresh [--target <tmux-target>]
        tmux-attention status-format
        tmux-attention catppuccin-format
@@ -37,6 +39,11 @@ clears only the target pane's agent context. Multiple panes in one window can
 therefore track agents independently. The plugin's @tmux_attention_context
 format renders the most recently active project while any pane is working and
 falls back to the current pane directory otherwise.
+
+turn-done atomically clears the target pane's active-turn context and sets its
+done attention marker. Its default source is turn and its default reason is
+response_ready. Use it when an agent Stop event means a completed response is
+ready for the user, rather than that an entire project or conversation ended.
 EOF
 }
 
@@ -340,6 +347,44 @@ set_turn_stop() {
 	recompute_window_summary
 }
 
+set_turn_done() {
+	tmux display-message -p -t "$target" '#{pane_id}' >/dev/null 2>&1 || {
+		printf 'tmux-attention: invalid target: %s\n' "$target" >&2
+		return 1
+	}
+
+	: "${source:=turn}"
+	: "${reason:=response_ready}"
+	updated_at="$(date +%s)"
+
+	# Apply the completed-turn transition in one tmux command queue so the pane
+	# cannot briefly render as idle without its response-ready marker.
+	tmux set-option -pq -t "$target" @agent_pane_attention 'done' \; \
+		set-option -pq -t "$target" @agent_pane_attention_source "$source" \; \
+		set-option -pq -t "$target" @agent_pane_attention_reason "$reason" \; \
+		set-option -pq -t "$target" @agent_pane_attention_updated_at "$updated_at" \; \
+		set-option -pq -t "$target" @agent_pane_context_active '' \; \
+		set-option -pq -t "$target" @agent_pane_context_project '' \; \
+		set-option -pq -t "$target" @agent_pane_context_updated_at ''
+	recompute_window_summary
+}
+
+schedule_clear_if_viewed() {
+	# Only a marker on the pane actually being viewed should auto-clear. Another
+	# pane may be visible in the same active window while retaining its marker.
+	attached_active="$(tmux display-message -p -t "$target" '#{session_attached} #{window_active} #{pane_active}' 2>/dev/null || printf '0 0 0')"
+	# shellcheck disable=SC2086  # intentional split of three space-delimited flags
+	set -- $attached_active
+	attached="${1:-0}"
+	active_window="${2:-0}"
+	active_pane="${3:-0}"
+
+	if [ "$attached" != "0" ] && [ "$active_window" = "1" ] && [ "$active_pane" = "1" ]; then
+		script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+		"$script_dir/clear-after-delay" "$target"
+	fi
+}
+
 print_get() {
 	if ! require_target; then
 		return 1
@@ -614,7 +659,7 @@ case "$state" in
 			exit 2
 		fi
 		;;
-	get|list|turn-start|turn-stop|refresh)
+	get|list|turn-start|turn-stop|turn-done|refresh)
 		;;
 	status-format|format)
 		cat <<'EOF'
@@ -731,6 +776,11 @@ case "$state" in
 		set_turn_stop
 		exit $?
 		;;
+	turn-done)
+		set_turn_done || exit $?
+		schedule_clear_if_viewed
+		exit $?
+		;;
 esac
 
 set_attention "$state"
@@ -741,16 +791,4 @@ case "$state" in
 		;;
 esac
 
-# Only a marker on the pane actually being viewed should auto-clear. Another
-# pane may be visible in the same active window while retaining its own marker.
-attached_active="$(tmux display-message -p -t "$target" '#{session_attached} #{window_active} #{pane_active}' 2>/dev/null || printf '0 0 0')"
-# shellcheck disable=SC2086  # intentional split of three space-delimited flags
-set -- $attached_active
-attached="${1:-0}"
-active_window="${2:-0}"
-active_pane="${3:-0}"
-
-if [ "$attached" != "0" ] && [ "$active_window" = "1" ] && [ "$active_pane" = "1" ]; then
-	script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
-	"$script_dir/clear-after-delay" "$target"
-fi
+schedule_clear_if_viewed

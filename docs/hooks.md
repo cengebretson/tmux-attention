@@ -78,7 +78,7 @@ Installed hooks:
 | `Notification` | `permission_prompt|idle_prompt` | `tmux-attention input` |
 | `StopFailure` | none | `tmux-attention blocked` |
 | `UserPromptSubmit` | none | `tmux-attention turn-start` |
-| `Stop` | none | `tmux-attention turn-stop` |
+| `Stop` | none | `tmux-attention turn-done --source claude --reason response_ready` |
 
 After installing Claude Code hooks, use `/hooks` in Claude Code to verify the
 installed hook definitions. The Claude Code hook menu is read-only; edits are
@@ -101,14 +101,16 @@ Installed hooks:
 |-------|---------|---------|
 | `PermissionRequest` | `.*` | `tmux-attention input` |
 | `UserPromptSubmit` | none | `tmux-attention turn-start` |
-| `Stop` | none | `tmux-attention turn-stop` |
+| `Stop` | none | `tmux-attention turn-done --source codex --reason response_ready` |
 
 After installing Codex hooks, use `/hooks` in Codex to review and trust the
 installed hook definitions. Codex skips non-managed hooks until they are
 trusted.
 
-`Stop` only clears active agent context. It does not set the `review` attention
-state, because that would mark every normal turn as needing review.
+`Stop` represents a completed agent turn, not the end of the whole project or
+conversation. `turn-done` clears active context and sets the `done` marker
+atomically, so the check icon means "response ready." The next
+`UserPromptSubmit` clears that marker through `turn-start`.
 
 The `turn-start` hooks derive a project label from the pane's Git branch,
 repository, or current directory. Include `#{E:@tmux_attention_context}` in a
