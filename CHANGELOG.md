@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-08-06
+
 ### Added
 
 - Add `turn-done`, an atomic completed-turn transition that clears pane-local
@@ -247,7 +249,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   server and a GitHub Actions CI workflow running ShellCheck and the tests.
 - Documentation: `README.md` and `docs/hooks.md`.
 
-[Unreleased]: https://github.com/cengebretson/tmux-attention/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/cengebretson/tmux-attention/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/cengebretson/tmux-attention/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/cengebretson/tmux-attention/compare/v0.5.4...v0.6.0
 [0.5.4]: https://github.com/cengebretson/tmux-attention/compare/v0.5.3...v0.5.4
 [0.5.3]: https://github.com/cengebretson/tmux-attention/compare/v0.5.2...v0.5.3
