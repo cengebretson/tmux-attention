@@ -6,6 +6,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Add an idempotent `turn-active` transition and generated Codex `PreToolUse`
+  hook so automatic continuations restore working context after an intermediate
+  `Stop` event.
+
 ## [0.6.1] - 2026-08-06
 
 ### Added

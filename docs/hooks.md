@@ -99,6 +99,7 @@ Installed hooks:
 
 | Event | Matcher | Command |
 |-------|---------|---------|
+| `PreToolUse` | `.*` | `tmux-attention turn-active` |
 | `PermissionRequest` | `.*` | `tmux-attention input` |
 | `UserPromptSubmit` | none | `tmux-attention turn-start` |
 | `Stop` | none | `tmux-attention turn-done --source codex --reason response_ready` |
@@ -111,6 +112,11 @@ trusted.
 conversation. `turn-done` clears active context and sets the `done` marker
 atomically, so the check icon means "response ready." The next
 `UserPromptSubmit` clears that marker through `turn-start`.
+
+Codex may continue an overall task after an intermediate `Stop`, including
+automatic goal continuations. The next `PreToolUse` calls the idempotent
+`turn-active` transition, restoring working context and clearing the premature
+completion marker without rewriting state on every tool call.
 
 The `turn-start` hooks derive a project label from the pane's Git branch,
 repository, or current directory. Include `#{E:@tmux_attention_context}` in a

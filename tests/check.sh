@@ -215,6 +215,18 @@ assert_eq "done" "$(tmux_test show-window-option -t "$target_pane" -v @agent_att
 assert_eq "" "$(tmux_test show-window-option -t "$target_pane" -v @agent_context_active)" "turn-done clears derived window context"
 assert_eq "$expected_path" "$(tmux_test display-message -p -t "$target_pane" '#{E:@tmux_attention_context}')" "turn-done restores pane-directory context"
 
+"$ROOT_DIR/scripts/tmux-attention" turn-active --target "$target_pane" --project CONTINUED
+assert_eq "" "$(tmux_test show-options -pqv -t "$target_pane" @agent_pane_attention)" "turn-active clears a premature response-ready marker"
+assert_eq "1" "$(tmux_test show-options -pqv -t "$target_pane" @agent_pane_context_active)" "turn-active restores pane context after continued activity"
+assert_eq "CONTINUED" "$(tmux_test show-options -pqv -t "$target_pane" @agent_pane_context_project)" "turn-active restores the continued project"
+
+"$ROOT_DIR/scripts/tmux-attention" review --target "$target_pane" --reason needs_review
+"$ROOT_DIR/scripts/tmux-attention" turn-active --target "$target_pane" --project IGNORED
+assert_eq "review" "$(tmux_test show-options -pqv -t "$target_pane" @agent_pane_attention)" "turn-active leaves an already-active pane untouched"
+assert_eq "CONTINUED" "$(tmux_test show-options -pqv -t "$target_pane" @agent_pane_context_project)" "turn-active preserves the existing project"
+"$ROOT_DIR/scripts/tmux-attention" clear --target "$target_pane"
+"$ROOT_DIR/scripts/tmux-attention" turn-stop --target "$target_pane"
+
 "$ROOT_DIR/scripts/tmux-attention" turn-start --target "$target_pane"
 assert_eq "" "$(tmux_test show-options -pqv -t "$target_pane" @agent_pane_attention)" "next turn-start clears response-ready marker"
 assert_eq "tmux-attention" "$(tmux_test show-window-option -t "$target_pane" -v @agent_context_project)" "turn-start derives the Git repository name"
@@ -363,6 +375,9 @@ absolute_codex_print="$(
 	TMUX_ATTENTION_CLI="/opt/tmux-attention/tmux-attention" \
 		"$ROOT_DIR/scripts/install-hooks" --print codex
 )"
+assert_contains '"PreToolUse"' "$absolute_codex_print" "Codex hooks observe resumed tool activity"
+assert_contains '"matcher": ".*"' "$absolute_codex_print" "Codex activity hook matches every tool"
+assert_contains "turn-active" "$absolute_codex_print" "Codex activity hook restores working context"
 assert_contains "turn-done --source codex --reason response_ready" "$absolute_codex_print" "Codex Stop hook marks a completed response"
 
 TMUX_ATTENTION_CLAUDE_SETTINGS="$CLAUDE_SETTINGS" \
@@ -386,7 +401,7 @@ for path in sys.argv[1:]:
 print(count)
 PY
 )"
-assert_eq "7" "$hook_marker_count" "hook installer is idempotent"
+assert_eq "8" "$hook_marker_count" "hook installer is idempotent"
 
 TMUX_ATTENTION_CLAUDE_SETTINGS="$CLAUDE_SETTINGS" \
 TMUX_ATTENTION_CODEX_HOOKS="$CODEX_HOOKS" \

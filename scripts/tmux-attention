@@ -12,6 +12,7 @@ Usage: tmux-attention [input|blocked|review|done|clear] [--target <tmux-target>]
        tmux-attention get [--target <tmux-target>] [--format text|json]
        tmux-attention list [--session <session>] [--format text|json]
        tmux-attention turn-start [--project <project>] [--target <tmux-target>]
+       tmux-attention turn-active [--project <project>] [--target <tmux-target>]
        tmux-attention turn-stop [--target <tmux-target>]
        tmux-attention turn-done [--target <tmux-target>]
                                 [--source <source>] [--reason <reason>]
@@ -39,6 +40,10 @@ clears only the target pane's agent context. Multiple panes in one window can
 therefore track agents independently. The plugin's @tmux_attention_context
 format renders the most recently active project while any pane is working and
 falls back to the current pane directory otherwise.
+
+turn-active idempotently restores a missing active-turn context. It is intended
+for activity hooks that may run repeatedly: an already-active pane is left
+untouched, while an inactive pane follows the same transition as turn-start.
 
 turn-done atomically clears the target pane's active-turn context and sets its
 done attention marker. Its default source is turn and its default reason is
@@ -333,6 +338,14 @@ set_turn_start() {
 		set-option -pq -t "$target" @agent_pane_context_project "$project" \; \
 		set-option -pq -t "$target" @agent_pane_context_updated_at "$(date +%s)"
 	recompute_window_summary
+}
+
+set_turn_active() {
+	if [ "$(get_pane_option @agent_pane_context_active)" = "1" ]; then
+		return 0
+	fi
+
+	set_turn_start
 }
 
 set_turn_stop() {
@@ -659,7 +672,7 @@ case "$state" in
 			exit 2
 		fi
 		;;
-	get|list|turn-start|turn-stop|turn-done|refresh)
+	get|list|turn-start|turn-active|turn-stop|turn-done|refresh)
 		;;
 	status-format|format)
 		cat <<'EOF'
@@ -770,6 +783,10 @@ case "$state" in
 		;;
 	turn-start)
 		set_turn_start
+		exit $?
+		;;
+	turn-active)
+		set_turn_active
 		exit $?
 		;;
 	turn-stop)

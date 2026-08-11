@@ -143,6 +143,7 @@ tmux-attention done
 tmux-attention clear
 tmux-attention turn-start
 tmux-attention turn-start --project FLYWL-2533
+tmux-attention turn-active
 tmux-attention turn-stop
 tmux-attention turn-done
 tmux-attention status-format
@@ -265,6 +266,11 @@ completed-response transition: it clears that context and sets the pane's
 own source. A following `turn-start` clears the marker as the next response
 begins.
 
+`turn-active` is the idempotent activity counterpart to `turn-start`. It does
+nothing while the pane is already active, but restores active context and
+clears a stale completion marker if agent activity continues after a Stop
+event.
+
 ## Agent Hooks
 
 Optional Claude Code and Codex hooks can call the same CLI. Setup wraps hook
@@ -281,9 +287,12 @@ See [docs/hooks.md](docs/hooks.md) for exact hook files, events, and lower-level
 
 Prompt-submit hooks call `turn-start`, which also clears that pane's previous
 attention marker. Stop hooks call `turn-done` for that pane, atomically clearing
-its active context and setting the response-ready check marker. The window
-context returns to its PWD fallback only after the final pane agent stops.
-Permission and failure hooks set attention on their originating pane.
+its active context and setting the response-ready check marker. Codex
+`PreToolUse` hooks call `turn-active`, so automatic continuations restore the
+working state if Codex emits an intermediate Stop before the overall task is
+finished. The window context returns to its PWD fallback only after the final
+pane agent stops. Permission and failure hooks set attention on their
+originating pane.
 
 ## Test
 

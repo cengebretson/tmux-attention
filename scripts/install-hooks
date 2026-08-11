@@ -155,6 +155,17 @@ CLAUDE_HOOKS = {
 }
 
 CODEX_HOOKS = {
+    "PreToolUse": [
+        {
+            "matcher": ".*",
+            "hooks": [
+                {
+                    "type": "command",
+                    "command": command("turn-active", "codex:turn-active"),
+                }
+            ],
+        }
+    ],
     "PermissionRequest": [
         {
             "matcher": ".*",
