@@ -646,4 +646,47 @@ assert_eq "5" "$setup_backup_count" "setup prunes old tmux config backups to fiv
 
 rm -rf "$PRUNE_TMP"
 
+# Pane ownership. The guard is a staleness check, not a security boundary: only
+# a mismatch refuses, so ad-hoc panes and manual use keep working untouched.
+owner_pane="$(tmux_test new-window -P -F '#{pane_id}')"
+
+"$ROOT_DIR/scripts/tmux-attention" blocked --target "$owner_pane" --source claude
+assert_eq "blocked" "$(tmux_test show-options -pqv -t "$owner_pane" @agent_pane_attention)" "unowned pane still accepts writes"
+assert_eq "" "$(tmux_test show-options -pqv -t "$owner_pane" @agent_pane_attention_verified)" "a write with no owner is recorded unverified"
+
+"$ROOT_DIR/scripts/tmux-attention" claim --owner agent-1 --target "$owner_pane"
+assert_eq "agent-1" "$(tmux_test show-options -pqv -t "$owner_pane" @agent_pane_owner)" "claim stamps the pane owner"
+assert_eq "" "$(tmux_test show-options -pqv -t "$owner_pane" @agent_pane_attention)" "claim clears the marker the pane inherited"
+
+"$ROOT_DIR/scripts/tmux-attention" blocked --target "$owner_pane" --owner agent-1 --source claude
+assert_eq "blocked" "$(tmux_test show-options -pqv -t "$owner_pane" @agent_pane_attention)" "matching owner may write"
+assert_eq "1" "$(tmux_test show-options -pqv -t "$owner_pane" @agent_pane_attention_verified)" "a matching write is recorded verified"
+
+mismatch_rc=0
+mismatch_err="$("$ROOT_DIR/scripts/tmux-attention" "done" --target "$owner_pane" --owner agent-2 2>&1)" || mismatch_rc=$?
+assert_eq "1" "$mismatch_rc" "a mismatched owner is refused"
+assert_contains "does not match pane owner" "$mismatch_err" "the refusal explains itself"
+assert_eq "blocked" "$(tmux_test show-options -pqv -t "$owner_pane" @agent_pane_attention)" "a refused write leaves the marker untouched"
+
+TMUX_ATTENTION_OWNER=agent-1 "$ROOT_DIR/scripts/tmux-attention" review --target "$owner_pane"
+assert_eq "review" "$(tmux_test show-options -pqv -t "$owner_pane" @agent_pane_attention)" "TMUX_ATTENTION_OWNER works like --owner"
+
+"$ROOT_DIR/scripts/tmux-attention" clear --target "$owner_pane"
+assert_eq "" "$(tmux_test show-options -pqv -t "$owner_pane" @agent_pane_attention)" "a caller with no owner may still clear an owned pane"
+
+"$ROOT_DIR/scripts/tmux-attention" input --target "$owner_pane" --owner agent-1
+"$ROOT_DIR/scripts/tmux-attention" disown --target "$owner_pane"
+assert_eq "" "$(tmux_test show-options -pqv -t "$owner_pane" @agent_pane_owner)" "disown removes the stamp"
+assert_eq "" "$(tmux_test show-options -pqv -t "$owner_pane" @agent_pane_attention_verified)" "verified cannot outlive the owner that granted it"
+
+"$ROOT_DIR/scripts/tmux-attention" claim --owner agent-9 --target "$owner_pane"
+"$ROOT_DIR/scripts/tmux-attention" input --target "$owner_pane" --owner agent-9
+owner_json="$("$ROOT_DIR/scripts/tmux-attention" get --target "$owner_pane" --format json)"
+assert_contains '"owner":"agent-9"' "$owner_json" "get json reports the pane owner"
+assert_contains '"verified":true' "$owner_json" "get json reports verification"
+
+claim_rc=0
+"$ROOT_DIR/scripts/tmux-attention" claim --target "$owner_pane" >/dev/null 2>&1 || claim_rc=$?
+assert_eq "2" "$claim_rc" "claim without an owner is a usage error"
+
 printf 'all checks passed\n'

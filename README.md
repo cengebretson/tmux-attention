@@ -187,10 +187,35 @@ Authoritative metadata is stored in separate pane options:
 | `@agent_pane_attention_source` | integration or tool that set the marker |
 | `@agent_pane_attention_reason` | event or reason that produced the marker |
 | `@agent_pane_attention_updated_at` | Unix timestamp for the last marker write |
+| `@agent_pane_attention_verified` | `1` when the writer matched the pane owner |
+| `@agent_pane_owner` | optional owner id, set by `claim` |
 
 The derived `@agent_attention`, `@agent_attention_source`,
 `@agent_attention_reason`, and `@agent_attention_updated_at` window options
 mirror the winning pane for existing tmux status formats.
+
+### Pane Ownership
+
+A dead agent's late hook, or the previous occupant of a recycled pane, can leave
+a marker that looks live. Ownership is an optional guard against that:
+
+```sh
+# A launcher stamps the pane and hands the agent the same id.
+tmux-attention claim --owner "$AGENT_ID" --target %12
+TMUX_ATTENTION_OWNER="$AGENT_ID" claude   # or --owner on each call
+
+tmux-attention disown --target %12
+```
+
+`claim` also clears any marker the pane inherited, so a new agent never starts
+wearing the previous occupant's state. A write whose id disagrees with the
+pane's is refused; one that matches is recorded as verified.
+
+Only a **mismatch** refuses. A caller presenting no id still writes — recorded
+unverified — so ad-hoc panes and manual `tmux-attention clear` are unaffected.
+This catches staleness and accidents, not a determined writer: anyone who can
+run tmux can set the option too. Treat `verified` as "probably who it says",
+never as authentication.
 
 Use `get` or `list` for scripts and pickers:
 

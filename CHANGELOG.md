@@ -6,6 +6,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Optional pane ownership, guarding against stale markers. `claim --owner <id>`
+  stamps a pane and clears any marker it inherited; a launcher hands the same id
+  to the agent it starts, via `--owner` or `TMUX_ATTENTION_OWNER`. A write whose
+  id disagrees with the pane's is refused, which is what stops a dead agent's
+  late hook — or the previous occupant of a recycled pane — from leaving a
+  marker that looks live. `disown` removes the stamp.
+- `@agent_pane_attention_verified` records whether a write matched the pane
+  owner, and `get --format json` reports it alongside `owner`. The flag is
+  cleared by `disown`, since verification cannot outlive the stamp that granted
+  it.
+
+Ownership is opt-in and only a *mismatch* refuses: a caller presenting no id
+still writes, recorded unverified, so ad-hoc panes and manual use are
+unchanged. It catches staleness and accidents, not a determined writer — anyone
+who can run tmux can set the option too.
+
 ## [0.6.2] - 2026-08-11
 
 ### Added

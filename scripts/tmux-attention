@@ -17,6 +17,8 @@ Usage: tmux-attention [input|blocked|review|done|clear] [--target <tmux-target>]
        tmux-attention turn-done [--target <tmux-target>]
                                 [--source <source>] [--reason <reason>]
        tmux-attention refresh [--target <tmux-target>]
+       tmux-attention claim --owner <id> [--target <tmux-target>]
+       tmux-attention disown [--target <tmux-target>]
        tmux-attention status-format
        tmux-attention catppuccin-format
        tmux-attention context-format
@@ -49,6 +51,18 @@ turn-done atomically clears the target pane's active-turn context and sets its
 done attention marker. Its default source is turn and its default reason is
 response_ready. Use it when an agent Stop event means a completed response is
 ready for the user, rather than that an entire project or conversation ended.
+
+claim stamps a pane with an owner id and clears any marker it inherited, so a
+new agent never starts wearing the previous occupant's state. A launcher runs it
+and gives the agent the same id, via --owner or TMUX_ATTENTION_OWNER. A write
+whose id disagrees with the pane's is then refused, which is what stops a dead
+agent's late hook, or the previous occupant of a recycled pane, from leaving a
+marker that looks live. disown removes the stamp.
+
+Ownership is optional and only a mismatch refuses: a caller presenting no id
+still writes, recorded as unverified, so ad-hoc panes and manual use are
+unaffected. It guards against staleness and accidents, not against a determined
+writer -- anyone who can run tmux can set the option too.
 EOF
 }
 
@@ -190,7 +204,8 @@ set_attention() {
 			tmux set-option -pq -t "$target" @agent_pane_attention '' \; \
 				set-option -pq -t "$target" @agent_pane_attention_source '' \; \
 				set-option -pq -t "$target" @agent_pane_attention_reason '' \; \
-				set-option -pq -t "$target" @agent_pane_attention_updated_at ''
+				set-option -pq -t "$target" @agent_pane_attention_updated_at '' \; \
+				set-option -pq -t "$target" @agent_pane_attention_verified ''
 			recompute_window_summary
 			return $?
 			;;
@@ -199,12 +214,68 @@ set_attention() {
 	tmux set-option -pq -t "$target" @agent_pane_attention "$attention_state" \; \
 		set-option -pq -t "$target" @agent_pane_attention_source "$source" \; \
 		set-option -pq -t "$target" @agent_pane_attention_reason "$reason" \; \
-		set-option -pq -t "$target" @agent_pane_attention_updated_at "$(date +%s)"
+		set-option -pq -t "$target" @agent_pane_attention_updated_at "$(date +%s)" \; \
+		set-option -pq -t "$target" @agent_pane_attention_verified "$write_verified"
 	recompute_window_summary
 }
 
 get_pane_option() {
 	tmux show-options -pqv -t "$target" "$1" 2>/dev/null || printf ''
+}
+
+# Ownership is an optional staleness guard, not a security boundary.
+#
+# A launcher stamps a pane with `claim <id>` and hands the same id to the agent
+# it starts (via --owner or TMUX_ATTENTION_OWNER). A write whose id disagrees
+# with the pane's is refused, which is what stops a dead agent's late hook -- or
+# the previous occupant of a recycled pane -- from leaving a marker that looks
+# live. Anyone who can run tmux can also set the option, so this catches
+# accidents and staleness, never a determined writer.
+#
+# Only a *mismatch* refuses. A caller presenting no id is allowed through
+# unverified, which keeps ad-hoc panes and manual `tmux-attention clear` working
+# exactly as before.
+owner_matches() {
+	pane_owner="$(get_pane_option @agent_pane_owner)"
+	if [ -z "$pane_owner" ]; then
+		write_verified=""
+		return 0
+	fi
+	if [ -z "$owner" ]; then
+		write_verified=""
+		return 0
+	fi
+	if [ "$owner" = "$pane_owner" ]; then
+		write_verified="1"
+		return 0
+	fi
+	printf 'tmux-attention: refusing write to %s: owner %s does not match pane owner %s\n' \
+		"$target" "$owner" "$pane_owner" >&2
+	return 1
+}
+
+claim_pane() {
+	if [ -z "$owner" ]; then
+		printf 'tmux-attention: claim requires --owner or TMUX_ATTENTION_OWNER\n' >&2
+		return 2
+	fi
+	# Clear any inherited marker as the pane changes hands, so a new agent never
+	# starts life wearing the previous occupant's state.
+	tmux set-option -pq -t "$target" @agent_pane_owner "$owner" \; \
+		set-option -pq -t "$target" @agent_pane_attention '' \; \
+		set-option -pq -t "$target" @agent_pane_attention_source '' \; \
+		set-option -pq -t "$target" @agent_pane_attention_reason '' \; \
+		set-option -pq -t "$target" @agent_pane_attention_updated_at '' \; \
+		set-option -pq -t "$target" @agent_pane_attention_verified ''
+	recompute_window_summary
+}
+
+disown_pane() {
+	# The verified flag means "written by the pane's owner", so it cannot
+	# outlive the stamp -- a marker claiming verification with nothing to have
+	# verified it against is worse than an unverified one.
+	tmux set-option -pq -t "$target" @agent_pane_owner '' \; \
+		set-option -pq -t "$target" @agent_pane_attention_verified ''
 }
 
 recompute_window_summary() {
@@ -414,6 +485,8 @@ print_get() {
 	source_value="$(get_pane_option @agent_pane_attention_source)"
 	reason_value="$(get_pane_option @agent_pane_attention_reason)"
 	updated_at_value="$(get_pane_option @agent_pane_attention_updated_at)"
+	owner_value="$(get_pane_option @agent_pane_owner)"
+	verified_value="$(get_pane_option @agent_pane_attention_verified)"
 
 	case "$format" in
 		text)
@@ -434,6 +507,14 @@ print_get() {
 			json_value "$reason_value"
 			printf ',"updated_at":'
 			json_value "$updated_at_value"
+			printf ',"owner":'
+			json_value "$owner_value"
+			printf ',"verified":'
+			if [ "$verified_value" = "1" ]; then
+				printf 'true'
+			else
+				printf 'false'
+			fi
 			printf '}\n'
 			;;
 	esac
@@ -507,6 +588,9 @@ source=""
 reason=""
 event_type=""
 project=""
+owner="${TMUX_ATTENTION_OWNER:-}"
+write_verified=""
+pane_owner=""
 
 while [ "$#" -gt 0 ]; do
 	case "$1" in
@@ -526,6 +610,19 @@ while [ "$#" -gt 0 ]; do
 				usage >&2
 				exit 2
 			fi
+			shift
+			;;
+		--owner)
+			if [ "$#" -lt 2 ]; then
+				printf 'tmux-attention: --owner requires a value\n' >&2
+				usage >&2
+				exit 2
+			fi
+			owner="$2"
+			shift 2
+			;;
+		--owner=*)
+			owner="${1#--owner=}"
 			shift
 			;;
 		--format)
@@ -672,7 +769,7 @@ case "$state" in
 			exit 2
 		fi
 		;;
-	get|list|turn-start|turn-active|turn-stop|turn-done|refresh)
+	get|list|turn-start|turn-active|turn-stop|turn-done|refresh|claim|disown)
 		;;
 	status-format|format)
 		cat <<'EOF'
@@ -775,6 +872,21 @@ if [ -z "$target" ]; then
 	printf '\a'
 	exit 0
 fi
+
+case "$state" in
+	claim)
+		claim_pane
+		exit $?
+		;;
+	disown)
+		disown_pane
+		exit $?
+		;;
+esac
+
+# Every write below goes through this one check, rather than each writer
+# repeating it.
+owner_matches || exit 1
 
 case "$state" in
 	refresh)
