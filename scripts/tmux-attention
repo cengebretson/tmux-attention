@@ -1,6 +1,24 @@
 #!/bin/sh
 
-TMUX_ATTENTION_VERSION="$(cat "$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)/VERSION" 2>/dev/null || echo unknown)"
+# Resolve this script through any symlinks before locating files beside it.
+# Symlinking the CLI onto PATH is a normal install, and dirname "$0" then points
+# at the link's directory -- so VERSION and shell-init's self-reference would
+# resolve next to the symlink instead of next to the plugin. readlink -f is not
+# portable, hence the loop.
+tmux_attention_dir() {
+	_self="$0"
+	while [ -L "$_self" ]; do
+		_link="$(readlink "$_self")"
+		case "$_link" in
+			/*) _self="$_link" ;;
+			*) _self="$(dirname -- "$_self")/$_link" ;;
+		esac
+	done
+	CDPATH= cd -- "$(dirname -- "$_self")" && pwd -P
+}
+
+TMUX_ATTENTION_DIR="$(tmux_attention_dir)"
+TMUX_ATTENTION_VERSION="$(cat "$TMUX_ATTENTION_DIR/../VERSION" 2>/dev/null || echo unknown)"
 
 usage() {
 	cat <<'EOF'
@@ -298,7 +316,7 @@ claim_pane() {
 # replacing that function would lose it. Those users compose the helpers into
 # the wrapper they already have.
 shell_init_self() {
-	CDPATH= cd -- "$(dirname -- "$0")" && pwd -P
+	printf '%s' "$TMUX_ATTENTION_DIR"
 }
 
 shell_init_posix() {

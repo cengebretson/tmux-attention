@@ -6,6 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Resolve the script through symlinks before locating files beside it.
+  Symlinking the CLI onto `PATH` is a normal install, but `dirname "$0"` then
+  pointed at the link's directory, so `version` reported `unknown` and
+  `shell-init` emitted the symlink's path instead of the plugin's. Both now
+  follow the link, including a chain of them.
+
 ## [0.8.0] - 2026-08-16
 
 ### Added

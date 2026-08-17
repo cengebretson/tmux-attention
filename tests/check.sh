@@ -724,6 +724,20 @@ if command -v fish >/dev/null 2>&1; then
 fi
 rm -rf "$INIT_TMP"
 
+# Symlinking the CLI onto PATH is a normal install, and dirname "$0" then points
+# at the link rather than the plugin -- which silently made `version` report
+# unknown and shell-init emit the symlink's path.
+LINK_TMP="$(mktemp -d "${TMPDIR:-/tmp}/tmux-attention-link.XXXXXX")"
+ln -s "$ROOT_DIR/scripts/tmux-attention" "$LINK_TMP/tmux-attention"
+ln -s "$LINK_TMP/tmux-attention" "$LINK_TMP/second-hop"
+assert_eq "$("$ROOT_DIR/scripts/tmux-attention" version)" "$("$LINK_TMP/tmux-attention" version)" \
+	"version resolves through a symlink"
+assert_eq "$("$ROOT_DIR/scripts/tmux-attention" version)" "$("$LINK_TMP/second-hop" version)" \
+	"version resolves through a chain of symlinks"
+assert_contains "$ROOT_DIR/scripts/tmux-attention" "$("$LINK_TMP/tmux-attention" shell-init fish)" \
+	"shell-init emits the real script path, not the symlink"
+rm -rf "$LINK_TMP"
+
 shell_rc=0
 "$ROOT_DIR/scripts/tmux-attention" shell-init tcsh >/dev/null 2>&1 || shell_rc=$?
 assert_eq "2" "$shell_rc" "an unsupported shell is a usage error"
