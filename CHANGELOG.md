@@ -6,6 +6,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `shell-init <fish|bash|zsh> [command...]`, emitting the shell integration that
+  makes pane ownership usable. Ownership shipped in 0.7.0 with no way to drive
+  it: the owner id has to reach the agent's environment at launch, and only the
+  shell can put it there — a hook reading it back off the pane would let a dead
+  agent's late hook match the pane's current owner, which is the case ownership
+  exists to catch.
+- The two helpers (`tmux_attention_claim`, `tmux_attention_disown`) are always
+  emitted; a full wrapper only for commands named explicitly. Wrapping is opt-in
+  because replacing a command someone already wraps would silently drop what
+  their version did — those users compose the helpers into their own wrapper.
+  Wrappers are fail-safe: outside tmux, or with the plugin missing, they run the
+  command unchanged and preserve its exit status.
+
 ## [0.7.0] - 2026-08-16
 
 ### Added

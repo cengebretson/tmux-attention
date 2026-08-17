@@ -19,6 +19,7 @@ Usage: tmux-attention [input|blocked|review|done|clear] [--target <tmux-target>]
        tmux-attention refresh [--target <tmux-target>]
        tmux-attention claim --owner <id> [--target <tmux-target>]
        tmux-attention disown [--target <tmux-target>]
+       tmux-attention shell-init <fish|bash|zsh> [command...]
        tmux-attention status-format
        tmux-attention catppuccin-format
        tmux-attention context-format
@@ -63,6 +64,20 @@ Ownership is optional and only a mismatch refuses: a caller presenting no id
 still writes, recorded as unverified, so ad-hoc panes and manual use are
 unaffected. It guards against staleness and accidents, not against a determined
 writer -- anyone who can run tmux can set the option too.
+
+shell-init prints shell integration to eval. It always defines
+tmux_attention_claim and tmux_attention_disown, and emits a full wrapper only
+for commands named after the shell:
+
+  tmux-attention shell-init fish | source          # helpers only
+  tmux-attention shell-init fish claude codex      # helpers + wrappers
+  eval "\$(tmux-attention shell-init bash claude)" # bash/zsh
+
+Wrapping is opt-in because replacing a command someone already wraps would
+silently drop what their version did; those users call the two helpers from the
+wrapper they already have. The owner id must reach the agent's environment at
+launch -- a hook reading it back off the pane would let a dead agent's late hook
+match the pane's current owner, which is the case ownership exists to catch.
 EOF
 }
 
@@ -268,6 +283,120 @@ claim_pane() {
 		set-option -pq -t "$target" @agent_pane_attention_updated_at '' \; \
 		set-option -pq -t "$target" @agent_pane_attention_verified ''
 	recompute_window_summary
+}
+
+# Shell integration.
+#
+# Ownership needs the owner id frozen into the agent's environment at launch:
+# if a later hook read it back off the pane instead, a dead agent's late hook
+# would read the *current* owner and match, which is the thing ownership exists
+# to prevent. So something has to wrap the launch, and only the shell can.
+#
+# Two functions are always emitted, and a full wrapper only for commands named
+# explicitly. Wrapping is opt-in because a user may already wrap `claude` for
+# their own reasons -- a window rename, a different binary -- and silently
+# replacing that function would lose it. Those users compose the helpers into
+# the wrapper they already have.
+shell_init_self() {
+	CDPATH= cd -- "$(dirname -- "$0")" && pwd -P
+}
+
+shell_init_posix() {
+	cli="$1"
+	cat <<EOF
+# tmux-attention shell integration. Regenerate with:
+#   tmux-attention shell-init $shell_name$wrap_commands
+_tmux_attention_cli() {
+	[ -n "\${TMUX:-}" ] || return 1
+	[ -x "$cli" ] || return 1
+	printf '%s' "$cli"
+}
+
+# Claim the current pane for one agent launch and echo the owner id. Export it
+# as TMUX_ATTENTION_OWNER for the command being launched.
+tmux_attention_claim() {
+	_tac="\$(_tmux_attention_cli)" || return 1
+	_tao="\${1:-agent}-\$\$-\${RANDOM:-0}"
+	"\$_tac" claim --owner "\$_tao" >/dev/null 2>&1 || return 1
+	printf '%s' "\$_tao"
+}
+
+tmux_attention_disown() {
+	_tac="\$(_tmux_attention_cli)" || return 0
+	"\$_tac" disown >/dev/null 2>&1 || true
+}
+EOF
+	for command in $wrap_commands; do
+		cat <<EOF
+
+$command() {
+	_tao="\$(tmux_attention_claim $command)" || { command $command "\$@"; return \$?; }
+	TMUX_ATTENTION_OWNER="\$_tao" command $command "\$@"
+	_tas=\$?
+	tmux_attention_disown
+	return \$_tas
+}
+EOF
+	done
+}
+
+shell_init_fish() {
+	cli="$1"
+	cat <<EOF
+# tmux-attention shell integration. Regenerate with:
+#   tmux-attention shell-init $shell_name$wrap_commands
+function _tmux_attention_cli --description 'Path to a usable tmux-attention CLI'
+	set -q TMUX; or return 1
+	test -x "$cli"; or return 1
+	echo "$cli"
+end
+
+function tmux_attention_claim --description 'Claim this pane for one agent launch'
+	set -l cli (_tmux_attention_cli); or return 1
+	set -l owner (string join -- '-' (test -n "\$argv[1]"; and echo \$argv[1]; or echo agent) \$fish_pid (random))
+	\$cli claim --owner \$owner >/dev/null 2>&1; or return 1
+	echo \$owner
+end
+
+function tmux_attention_disown --description 'Release this pane after an agent exits'
+	set -l cli (_tmux_attention_cli); or return 0
+	\$cli disown >/dev/null 2>&1
+	return 0
+end
+EOF
+	for command in $wrap_commands; do
+		cat <<EOF
+
+function $command --wraps=$command --description '$command with tmux-attention pane ownership'
+	set -l owner (tmux_attention_claim $command)
+	if test -z "\$owner"
+		command $command \$argv
+		return \$status
+	end
+	set -x TMUX_ATTENTION_OWNER \$owner
+	command $command \$argv
+	set -l agent_status \$status
+	tmux_attention_disown
+	return \$agent_status
+end
+EOF
+	done
+}
+
+shell_init() {
+	cli="$(shell_init_self)/tmux-attention"
+	case "$shell_name" in
+		fish) shell_init_fish "$cli" ;;
+		bash|zsh|sh) shell_init_posix "$cli" ;;
+		'')
+			printf 'tmux-attention: shell-init requires a shell: fish, bash, or zsh\n' >&2
+			return 2
+			;;
+		*)
+			printf 'tmux-attention: unsupported shell: %s (fish, bash, zsh)\n' "$shell_name" >&2
+			return 2
+			;;
+	esac
 }
 
 disown_pane() {
@@ -591,6 +720,8 @@ project=""
 owner="${TMUX_ATTENTION_OWNER:-}"
 write_verified=""
 pane_owner=""
+shell_name=""
+wrap_commands=""
 
 while [ "$#" -gt 0 ]; do
 	case "$1" in
@@ -709,6 +840,16 @@ while [ "$#" -gt 0 ]; do
 					event_type="$1"
 					shift
 					continue
+				elif [ "$state" = "shell-init" ]; then
+					# First positional is the shell; any that follow name
+					# commands to emit a full wrapper for.
+					if [ -z "$shell_name" ]; then
+						shell_name="$1"
+					else
+						wrap_commands="$wrap_commands $1"
+					fi
+					shift
+					continue
 				else
 					printf 'tmux-attention: unexpected argument: %s\n' "$1" >&2
 					usage >&2
@@ -770,6 +911,12 @@ case "$state" in
 		fi
 		;;
 	get|list|turn-start|turn-active|turn-stop|turn-done|refresh|claim|disown)
+		;;
+	shell-init)
+		# Emits text only: no tmux server and no target required, so it runs
+		# before the checks below and works outside tmux entirely.
+		shell_init
+		exit "$?"
 		;;
 	status-format|format)
 		cat <<'EOF'

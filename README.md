@@ -217,6 +217,47 @@ This catches staleness and accidents, not a determined writer: anyone who can
 run tmux can set the option too. Treat `verified` as "probably who it says",
 never as authentication.
 
+### Shell Integration
+
+The owner id has to reach the agent's environment at launch, so something must
+wrap the launch — a hook reading it back off the pane would let a dead agent's
+late hook match the pane's *current* owner, which is the case ownership exists
+to catch. `shell-init` emits that wrapper:
+
+```fish
+# fish (~/.config/fish/config.fish)
+tmux-attention shell-init fish claude codex | source
+```
+
+```bash
+# bash/zsh (~/.bashrc, ~/.zshrc)
+eval "$(tmux-attention shell-init bash claude codex)"
+```
+
+Naming commands is optional. With none, only the two helpers are defined:
+
+```fish
+tmux-attention shell-init fish | source
+```
+
+Use that if you already wrap the command yourself — emitting a wrapper would
+replace your function and silently drop whatever it did. Compose instead:
+
+```fish
+function claude --wraps=claude
+    set -l owner (tmux_attention_claim claude)
+    test -n "$owner"; and set -x TMUX_ATTENTION_OWNER $owner
+    # ... whatever else your wrapper does ...
+    command claude $argv
+    set -l st $status
+    tmux_attention_disown
+    return $st
+end
+```
+
+The wrappers are fail-safe: outside tmux, or with the plugin missing, they run
+the command unchanged and preserve its exit status.
+
 Use `get` or `list` for scripts and pickers:
 
 ```sh

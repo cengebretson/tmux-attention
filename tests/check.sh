@@ -689,4 +689,47 @@ claim_rc=0
 "$ROOT_DIR/scripts/tmux-attention" claim --target "$owner_pane" >/dev/null 2>&1 || claim_rc=$?
 assert_eq "2" "$claim_rc" "claim without an owner is a usage error"
 
+# Shell integration. The emitted code is the only way ownership can be driven,
+# since the owner id has to reach the agent's environment at launch.
+init_fish="$("$ROOT_DIR/scripts/tmux-attention" shell-init fish claude)"
+assert_contains "function tmux_attention_claim" "$init_fish" "fish init defines the claim helper"
+assert_contains "function tmux_attention_disown" "$init_fish" "fish init defines the disown helper"
+assert_contains "function claude --wraps=claude" "$init_fish" "fish init wraps a named command"
+
+init_bash="$("$ROOT_DIR/scripts/tmux-attention" shell-init bash claude codex)"
+assert_contains "tmux_attention_claim()" "$init_bash" "bash init defines the claim helper"
+assert_contains "claude()" "$init_bash" "bash init wraps each named command"
+assert_contains "codex()" "$init_bash" "bash init wraps every named command"
+
+# Helpers without wrappers is the path for anyone who already wraps the command
+# themselves; emitting a wrapper anyway would silently replace theirs.
+init_bare="$("$ROOT_DIR/scripts/tmux-attention" shell-init bash)"
+assert_contains "tmux_attention_claim()" "$init_bare" "helpers are emitted with no commands named"
+assert_not_contains "claude()" "$init_bare" "no wrapper is emitted unless a command is named"
+
+# The emitted code is generated text, so a quoting slip produces something that
+# parses nowhere; check both dialects actually parse.
+INIT_TMP="$(mktemp -d "${TMPDIR:-/tmp}/tmux-attention-init.XXXXXX")"
+if command -v bash >/dev/null 2>&1; then
+	printf '%s\n' "$init_bash" >"$INIT_TMP/init.bash"
+	init_rc=0
+	bash -n "$INIT_TMP/init.bash" || init_rc=$?
+	assert_eq "0" "$init_rc" "emitted bash is syntactically valid"
+fi
+if command -v fish >/dev/null 2>&1; then
+	printf '%s\n' "$init_fish" >"$INIT_TMP/init.fish"
+	init_rc=0
+	fish -n "$INIT_TMP/init.fish" || init_rc=$?
+	assert_eq "0" "$init_rc" "emitted fish is syntactically valid"
+fi
+rm -rf "$INIT_TMP"
+
+shell_rc=0
+"$ROOT_DIR/scripts/tmux-attention" shell-init tcsh >/dev/null 2>&1 || shell_rc=$?
+assert_eq "2" "$shell_rc" "an unsupported shell is a usage error"
+
+shell_rc=0
+"$ROOT_DIR/scripts/tmux-attention" shell-init >/dev/null 2>&1 || shell_rc=$?
+assert_eq "2" "$shell_rc" "shell-init requires a shell name"
+
 printf 'all checks passed\n'
