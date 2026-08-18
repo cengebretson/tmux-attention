@@ -200,8 +200,16 @@ assert_eq "1" "$(tmux_test show-window-option -t "$target_pane" -v @agent_contex
 
 "$ROOT_DIR/scripts/tmux-attention" turn-stop --target "$other_pane"
 assert_eq "" "$(tmux_test show-window-option -t "$target_pane" -v @agent_context_active)" "window summary clears after the final pane agent stops"
-expected_path="$(tmux_test display-message -p -t "$target_pane" '#{b:pane_current_path}')"
-assert_eq "$expected_path" "$(tmux_test display-message -p -t "$target_pane" '#{E:@tmux_attention_context}')" "context format falls back to pane directory"
+# Last-resort tier: a pane outside any repo falls back to the directory basename. Uses a
+# dedicated non-git directory rather than the pane the suite happens to start in, because
+# that pane sits inside this checkout, so the assertion used to depend on whether the
+# developer's tree was clean and on whether its branch carried a ticket.
+plain_dir="$TMP_BIN/not-a-repo"
+mkdir -p "$plain_dir"
+nogit_pane="$(tmux_test new-window -d -P -F '#{pane_id}' -n nogit -c "$plain_dir")"
+"$ROOT_DIR/scripts/tmux-attention" refresh --target "$nogit_pane"
+assert_eq "not-a-repo" "$(tmux_test show-window-option -t "$nogit_pane" -v @agent_context_idle_project)" "idle label falls back to the directory outside a repo"
+assert_eq "not-a-repo" "$(tmux_test display-message -p -t "$nogit_pane" '#{E:@tmux_attention_context}')" "context format falls back to the directory outside a repo"
 
 # Idle tier: with no turn running, the context label should still identify the window by
 # ticket when the pane sits in a repo on a ticket branch. Without this the status bar shows
@@ -219,6 +227,41 @@ idle_pane="$(tmux_test new-window -d -P -F '#{pane_id}' -n idle -c "$idle_repo")
 assert_eq "FLYWL-4242" "$(tmux_test show-window-option -t "$idle_pane" -v @agent_context_idle_project)" "refresh derives an idle project from the branch ticket"
 assert_eq "FLYWL-4242" "$(tmux_test display-message -p -t "$idle_pane" '#{E:@tmux_attention_context}')" "context format renders the idle ticket with no active turn"
 assert_eq "FLYWL-4242" "$(tmux_test display-message -p -t "$idle_pane" '#{E:@tmux_attention_tab_label}')" "tab label renders the idle ticket"
+
+# Dirty marker: a derived label flags uncommitted changes, and the marker is configurable.
+printf 'change\n' >"$idle_repo/tracked.txt"
+(cd "$idle_repo" && git add tracked.txt && git -c user.email=t@example.com -c user.name=t commit -q -m add) >/dev/null 2>&1
+printf 'edited\n' >>"$idle_repo/tracked.txt"
+"$ROOT_DIR/scripts/tmux-attention" refresh --target "$idle_pane"
+assert_eq "FLYWL-4242*" "$(tmux_test show-window-option -t "$idle_pane" -v @agent_context_idle_project)" "dirty tree appends the default marker"
+
+tmux_test set-option -g @tmux_attention_dirty_marker "off"
+"$ROOT_DIR/scripts/tmux-attention" refresh --target "$idle_pane"
+assert_eq "FLYWL-4242" "$(tmux_test show-window-option -t "$idle_pane" -v @agent_context_idle_project)" "dirty marker can be turned off"
+
+tmux_test set-option -g @tmux_attention_dirty_marker "~"
+"$ROOT_DIR/scripts/tmux-attention" refresh --target "$idle_pane"
+assert_eq "FLYWL-4242~" "$(tmux_test show-window-option -t "$idle_pane" -v @agent_context_idle_project)" "dirty marker is configurable"
+
+tmux_test set-option -g @tmux_attention_dirty_marker "off"
+(cd "$idle_repo" && git checkout -q -- tracked.txt) >/dev/null 2>&1
+"$ROOT_DIR/scripts/tmux-attention" refresh --target "$idle_pane"
+assert_eq "FLYWL-4242" "$(tmux_test show-window-option -t "$idle_pane" -v @agent_context_idle_project)" "clean tree drops the marker"
+
+# Worktree hint is opt-in and off by default.
+wt_path="$TMP_BIN/wt-FLYWL-4242-second"
+(cd "$idle_repo" && git worktree add -q -b feature/FLYWL-4242-second "$wt_path") >/dev/null 2>&1
+wt_pane="$(tmux_test new-window -d -P -F '#{pane_id}' -n wt -c "$wt_path")"
+"$ROOT_DIR/scripts/tmux-attention" refresh --target "$wt_pane"
+assert_eq "FLYWL-4242" "$(tmux_test show-window-option -t "$wt_pane" -v @agent_context_idle_project)" "worktree hint is off by default"
+
+tmux_test set-option -g @tmux_attention_worktree_hint "on"
+"$ROOT_DIR/scripts/tmux-attention" refresh --target "$wt_pane"
+assert_eq "FLYWL-4242@wt-FLYWL-4242-second" "$(tmux_test show-window-option -t "$wt_pane" -v @agent_context_idle_project)" "worktree hint disambiguates a linked worktree"
+
+"$ROOT_DIR/scripts/tmux-attention" refresh --target "$idle_pane"
+assert_eq "FLYWL-4242" "$(tmux_test show-window-option -t "$idle_pane" -v @agent_context_idle_project)" "worktree hint is not added to the main checkout"
+tmux_test set-option -g @tmux_attention_worktree_hint "off"
 
 # An active turn still wins over the idle label.
 "$ROOT_DIR/scripts/tmux-attention" turn-start --target "$idle_pane" --project OVERRIDE-1
@@ -258,7 +301,10 @@ assert_eq "codex" "$(tmux_test show-options -pqv -t "$target_pane" @agent_pane_a
 assert_eq "response_ready" "$(tmux_test show-options -pqv -t "$target_pane" @agent_pane_attention_reason)" "turn-done records response-ready reason"
 assert_eq "done" "$(tmux_test show-window-option -t "$target_pane" -v @agent_attention)" "turn-done derives done window summary"
 assert_eq "" "$(tmux_test show-window-option -t "$target_pane" -v @agent_context_active)" "turn-done clears derived window context"
-assert_eq "$expected_path" "$(tmux_test display-message -p -t "$target_pane" '#{E:@tmux_attention_context}')" "turn-done restores pane-directory context"
+# turn-done ends the turn, so the context must drop back to the idle tier rather than keep
+# showing the finished turn's project. Compared against the window's own idle label so this
+# does not depend on where the suite is checked out.
+assert_eq "$(tmux_test show-window-option -t "$target_pane" -v @agent_context_idle_project)" "$(tmux_test display-message -p -t "$target_pane" '#{E:@tmux_attention_context}')" "turn-done restores idle context"
 
 "$ROOT_DIR/scripts/tmux-attention" turn-active --target "$target_pane" --project CONTINUED
 assert_eq "" "$(tmux_test show-options -pqv -t "$target_pane" @agent_pane_attention)" "turn-active clears a premature response-ready marker"

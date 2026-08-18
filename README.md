@@ -315,7 +315,13 @@ set -g window-status-format "#{E:@tmux_attention_tab_icon} #{E:@tmux_attention_t
 
 The idle label is recomputed on `after-select-window`, `client-attached`,
 `client-session-changed`, and `pane-focus-in`, i.e. whenever you look at
-something else. It is deliberately not cached on the pane path, because
+something else. Two optional suffixes refine a **derived** label (an explicit
+`turn-start --project` value is never modified):
+
+| Option | Default | Effect |
+|--------|---------|--------|
+| `@tmux_attention_dirty_marker` | `*` | Appended when the tree has uncommitted changes. Set to `off` to disable, or to any string to change the glyph. |
+| `@tmux_attention_worktree_hint` | off | Set `on` to append `@<worktree-dir>` inside a linked worktree, so two worktrees on branches sharing a ticket are distinguishable. Keyed on "is this a linked worktree" rather than a cross-window collision scan, because a scan's result depends on the order windows refresh and the labels would flap. | It is deliberately not cached on the pane path, because
 `git checkout` changes the branch without changing the directory.
 
 `turn-start` derives its project label in this order:

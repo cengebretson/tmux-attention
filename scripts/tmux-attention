@@ -539,10 +539,42 @@ derive_project() {
 		)"
 	fi
 
+	# Optional suffixes. Both are read from global tmux options so a user can turn them off
+	# without patching the plugin, and both are appended only to a label we derived
+	# ourselves: an explicit `turn-start --project` value is passed through untouched.
+	context_suffix=""
+
+	# Dirty marker: a one-character hint that the tree has uncommitted changes. Uses
+	# --quiet with an exit status rather than parsing porcelain output, so it stays a
+	# single cheap call on an already-warm git index.
+	if [ -n "$context_root" ]; then
+		dirty_marker="$(tmux show-option -gqv @tmux_attention_dirty_marker 2>/dev/null || printf '')"
+		if [ -z "$dirty_marker" ]; then
+			dirty_marker="*"
+		elif [ "$dirty_marker" = "off" ]; then
+			dirty_marker=""
+		fi
+		if [ -n "$dirty_marker" ] && ! git -C "$context_path" diff --quiet HEAD 2>/dev/null; then
+			context_suffix="$dirty_marker"
+		fi
+	fi
+
+	# Worktree hint: opt-in, because two linked worktrees on branches sharing a ticket
+	# render identically otherwise. Deliberately keyed on "is this a linked worktree"
+	# rather than on a cross-window collision scan: a scan result depends on the order
+	# windows happen to refresh, so labels would flap as you moved around.
+	if [ -n "$context_root" ] && [ "$(tmux show-option -gqv @tmux_attention_worktree_hint 2>/dev/null || printf '')" = "on" ]; then
+		git_dir="$(git -C "$context_path" rev-parse --absolute-git-dir 2>/dev/null || printf '')"
+		common_dir="$(git -C "$context_path" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || printf '')"
+		if [ -n "$git_dir" ] && [ -n "$common_dir" ] && [ "$git_dir" != "$common_dir" ]; then
+			context_suffix="$context_suffix@${context_root##*/}"
+		fi
+	fi
+
 	if [ -n "$context_ticket" ]; then
-		printf '%s\n' "$context_ticket"
+		printf '%s\n' "$context_ticket$context_suffix"
 	elif [ -n "$context_root" ]; then
-		printf '%s\n' "${context_root##*/}"
+		printf '%s\n' "${context_root##*/}$context_suffix"
 	else
 		context_path="${context_path%/}"
 		printf '%s\n' "${context_path##*/}"

@@ -13,6 +13,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   not only during them.
 - `@tmux_attention_tab_label` format for `window-status-format`, resolving the
   active project, then the idle label, then `window_name`.
+- `@tmux_attention_dirty_marker` (default `*`) appends a hint to a derived label when
+  the tree has uncommitted changes.
+- `@tmux_attention_worktree_hint` (default off) appends `@<worktree-dir>` inside a linked
+  worktree.
 - `refresh` is now wired to `after-select-window`, `client-attached`,
   `client-session-changed`, and `pane-focus-in`. Previously the window summary was
   only recomputed on a turn boundary or `after-kill-pane`, so a freshly attached
