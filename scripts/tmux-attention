@@ -918,6 +918,8 @@ while [ "$#" -gt 0 ]; do
 					else
 						wrap_commands="$wrap_commands $1"
 					fi
+					shift
+					continue
 				elif [ "$state" = "activity" ] && [ -z "$activity_value" ]; then
 					activity_value="$1"
 					shift
