@@ -6,6 +6,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- `@tmux_attention_tab_label` no longer overwrites a window name you chose. It is
+  gated on `automatic-rename`, which tmux leaves on only while it derives the name
+  from the running process, so a derived label now fills in for `fish` but never
+  replaces `riskos`. Every window sharing a checkout derives the same label, so
+  0.9.0 turned a row of distinct tabs into one repeated repo name. The live context
+  is unchanged in `@tmux_attention_context`; turn a window's automatic-rename back
+  on to opt it in.
+
 ## [0.9.0] - 2026-08-18
 
 ### Added

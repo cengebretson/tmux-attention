@@ -223,6 +223,11 @@ mkdir -p "$idle_repo"
 		git checkout -q -b feature/FLYWL-4242-idle-label
 ) >/dev/null 2>&1
 idle_pane="$(tmux_test new-window -d -P -F '#{pane_id}' -n idle -c "$idle_repo")"
+# `new-window -n` turns automatic-rename off, which the tab label now reads as a
+# deliberately chosen name. These assertions are about the derived label, so put the
+# window back in the auto-named state tmux gives a window nobody has renamed. The
+# deliberate-name case has its own test below.
+tmux_test set-window-option -t "$idle_pane" automatic-rename on
 "$ROOT_DIR/scripts/tmux-attention" refresh --target "$idle_pane"
 assert_eq "FLYWL-4242" "$(tmux_test show-window-option -t "$idle_pane" -v @agent_context_idle_project)" "refresh derives an idle project from the branch ticket"
 assert_eq "FLYWL-4242" "$(tmux_test display-message -p -t "$idle_pane" '#{E:@tmux_attention_context}')" "context format renders the idle ticket with no active turn"
@@ -304,6 +309,21 @@ tmux_test set-window-option -t "$idle_pane" @agent_context_idle_project ""
 tmux_test select-window -t "$idle_pane"
 sleep 2
 assert_eq "FLYWL-4242" "$(tmux_test show-window-option -t "$idle_pane" -v @agent_context_idle_project)" "after-select-window hook repopulates the idle label"
+
+# A window someone named keeps that name, even where a ticket IS derivable. Overriding it
+# replaced distinct tabs ("poc", "bug", "riskos") with one repeated repo name for every
+# window sharing a checkout, which is strictly less information than the names it replaced.
+named_pane="$(tmux_test new-window -d -P -F '#{pane_id}' -n riskos -c "$idle_repo")"
+"$ROOT_DIR/scripts/tmux-attention" refresh --target "$named_pane"
+assert_eq "FLYWL-4242" "$(tmux_test show-window-option -t "$named_pane" -v @agent_context_idle_project)" "a deliberately named window still derives its idle label"
+assert_eq "riskos" "$(tmux_test display-message -p -t "$named_pane" '#{E:@tmux_attention_tab_label}')" "tab label keeps a deliberately chosen window name"
+assert_eq "FLYWL-4242" "$(tmux_test display-message -p -t "$named_pane" '#{E:@tmux_attention_context}')" "context still shows the ticket for a deliberately named window"
+
+# An active agent turn does not override a deliberate name either, so the rule is one rule.
+"$ROOT_DIR/scripts/tmux-attention" turn-start --target "$named_pane" --project TURN-9
+assert_eq "riskos" "$(tmux_test display-message -p -t "$named_pane" '#{E:@tmux_attention_tab_label}')" "an active turn does not override a deliberate name"
+assert_eq "TURN-9" "$(tmux_test display-message -p -t "$named_pane" '#{E:@tmux_attention_context}')" "context still shows the active project for a named window"
+"$ROOT_DIR/scripts/tmux-attention" turn-stop --target "$named_pane"
 
 # Tab label falls back to the window name, not a directory, when nothing better exists.
 plain_pane="$(tmux_test new-window -d -P -F '#{pane_id}' -n plainwin -c "$TMP_BIN")"

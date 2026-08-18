@@ -313,6 +313,18 @@ window the summary has never run for.
 set -g window-status-format "#{E:@tmux_attention_tab_icon} #{E:@tmux_attention_tab_label}"
 ```
 
+It only ever replaces a name tmux derived itself. `automatic-rename` is off for a
+window you renamed and on while tmux names it from the running process, so the tab
+label defers whenever it is off. A derived label beats `fish`, but it loses to
+`riskos`, and every window sharing a checkout derives the *same* label, so
+overriding chosen names turns a row of distinct tabs into one repeated string. The
+live context is still available in `@tmux_attention_context` for the status bar. To
+opt a window in, turn its automatic-rename back on:
+
+```tmux
+set-window-option automatic-rename on
+```
+
 The idle label is recomputed on `after-select-window`, `client-attached`,
 `client-session-changed`, and `pane-focus-in`, i.e. whenever you look at
 something else. Two optional suffixes refine a **derived** label (an explicit

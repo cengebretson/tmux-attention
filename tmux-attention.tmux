@@ -48,7 +48,15 @@ set_default_option "@tmux_attention_context" "#{?#{==:#{@agent_context_active},1
 # Same resolution for window tabs, but falling back to the window name rather than a
 # directory, since that is what a tab shows by default. Pair it with
 # @tmux_attention_tab_icon in window-status-format.
-set_default_option "@tmux_attention_tab_label" "#{?#{==:#{@agent_context_active},1},#{@agent_context_project}#{E:@tmux_attention_activity_suffix},#{?#{!=:#{@agent_context_idle_project},},#{@agent_context_idle_project},#{window_name}}}"
+#
+# Gated on `automatic-rename`, which is how tmux records whether a window name means
+# anything: it is off for a window someone renamed and on while tmux derives the name
+# from the running process. A derived label is an improvement over "fish" but a
+# regression over "riskos", and windows that share a checkout all derive the SAME
+# label, so overriding deliberate names replaced distinct tabs with one repeated
+# string. A name you set is therefore never overwritten; the live context still shows
+# in @tmux_attention_context. Turn automatic-rename back on for a window to opt it in.
+set_default_option "@tmux_attention_tab_label" "#{?automatic-rename,#{?#{==:#{@agent_context_active},1},#{@agent_context_project}#{E:@tmux_attention_activity_suffix},#{?#{!=:#{@agent_context_idle_project},},#{@agent_context_idle_project},#{window_name}}},#{window_name}}"
 
 # Re-clear the marker shortly after its pane is actually viewed. Cover every
 # way a pane becomes visible: selecting its window (after-select-window), attaching a
