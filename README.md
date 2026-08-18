@@ -324,6 +324,24 @@ something else. Two optional suffixes refine a **derived** label (an explicit
 | `@tmux_attention_worktree_hint` | off | Set `on` to append `@<worktree-dir>` inside a linked worktree, so two worktrees on branches sharing a ticket are distinguishable. Keyed on "is this a linked worktree" rather than a cross-window collision scan, because a scan's result depends on the order windows refresh and the labels would flap. | It is deliberately not cached on the pane path, because
 `git checkout` changes the branch without changing the directory.
 
+### Activity
+
+`activity <verb>` stores a short word on the pane describing what an agent is doing right
+now, and `activity --clear` removes it. It layers *after* the project label instead of
+replacing it, so the ticket survives; `turn-stop` and `turn-done` clear it so a finished turn
+cannot leave a stale verb behind.
+
+Hidden by default. Set `@tmux_attention_show_activity` to `on` to append it. It is off by
+default on purpose: the status bar repaints on `status-interval`, so a verb that changes with
+every tool call reads as a random sample of what the agent was doing some seconds ago, and
+`@tmux_attention_icon_working` already answers "is something running here".
+
+| Option | Default | Effect |
+|--------|---------|--------|
+| `@tmux_attention_show_activity` | off | Set `on` to append the activity to the context and tab labels. |
+| `@agent_pane_activity` | - | Pane option holding the verb. |
+| `@agent_context_activity` | - | Window summary of the active pane's verb. |
+
 `turn-start` derives its project label in this order:
 
 1. Jira-style key in the current Git branch, such as `FLYWL-2533`

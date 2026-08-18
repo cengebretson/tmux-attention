@@ -431,7 +431,7 @@ recompute_window_summary() {
 		return 1
 	}
 	tab="$(printf '\t')"
-	pane_rows="$(tmux list-panes -t "$window_id" -F "#{pane_id}${tab}#{@agent_pane_attention}${tab}#{@agent_pane_attention_source}${tab}#{@agent_pane_attention_reason}${tab}#{@agent_pane_attention_updated_at}${tab}#{@agent_pane_context_active}${tab}#{@agent_pane_context_project}${tab}#{@agent_pane_context_updated_at}" 2>/dev/null)" || return 1
+	pane_rows="$(tmux list-panes -t "$window_id" -F "#{pane_id}${tab}#{@agent_pane_attention}${tab}#{@agent_pane_attention_source}${tab}#{@agent_pane_attention_reason}${tab}#{@agent_pane_attention_updated_at}${tab}#{@agent_pane_context_active}${tab}#{@agent_pane_context_project}${tab}#{@agent_pane_context_updated_at}${tab}#{@agent_pane_activity}" 2>/dev/null)" || return 1
 
 	attention_row="$(
 		printf '%s\n' "$pane_rows" |
@@ -477,13 +477,15 @@ recompute_window_summary() {
 				best_project = $7
 				best_pane = $1
 				best_updated_at = $8
+				best_activity = $9
 			}
 			END {
-				if (best_pane != "") printf "%s\n%s\n%s\n", best_project, best_pane, best_updated_at
+				if (best_pane != "") printf "%s\n%s\n%s\n%s\n", best_project, best_pane, best_updated_at, best_activity
 			}'
 	)"
 	context_active=""
 	context_project=""
+	context_activity=""
 	context_pane=""
 	context_updated_at=""
 	if [ -n "$context_row" ]; then
@@ -491,6 +493,7 @@ recompute_window_summary() {
 		context_project="$(printf '%s\n' "$context_row" | sed -n '1p')"
 		context_pane="$(printf '%s\n' "$context_row" | sed -n '2p')"
 		context_updated_at="$(printf '%s\n' "$context_row" | sed -n '3p')"
+		context_activity="$(printf '%s\n' "$context_row" | sed -n '4p')"
 	fi
 
 	# Idle label: what to show when no agent turn is active. Derived from the window's
@@ -515,7 +518,8 @@ recompute_window_summary() {
 		set-window-option -q -t "$window_id" @agent_context_project "$context_project" \; \
 		set-window-option -q -t "$window_id" @agent_context_pane "$context_pane" \; \
 		set-window-option -q -t "$window_id" @agent_context_updated_at "$context_updated_at" \; \
-		set-window-option -q -t "$window_id" @agent_context_idle_project "$idle_project"
+		set-window-option -q -t "$window_id" @agent_context_idle_project "$idle_project" \; \
+		set-window-option -q -t "$window_id" @agent_context_activity "$context_activity"
 }
 
 derive_project() {
@@ -619,6 +623,7 @@ set_turn_stop() {
 
 	tmux set-option -pq -t "$target" @agent_pane_context_active '' \; \
 		set-option -pq -t "$target" @agent_pane_context_project '' \; \
+		set-option -pq -t "$target" @agent_pane_activity '' \; \
 		set-option -pq -t "$target" @agent_pane_context_updated_at ''
 	recompute_window_summary
 }
@@ -641,6 +646,7 @@ set_turn_done() {
 		set-option -pq -t "$target" @agent_pane_attention_updated_at "$updated_at" \; \
 		set-option -pq -t "$target" @agent_pane_context_active '' \; \
 		set-option -pq -t "$target" @agent_pane_context_project '' \; \
+		set-option -pq -t "$target" @agent_pane_activity '' \; \
 		set-option -pq -t "$target" @agent_pane_context_updated_at ''
 	recompute_window_summary
 }
@@ -779,6 +785,7 @@ session=""
 source=""
 reason=""
 event_type=""
+activity_value=""
 project=""
 owner="${TMUX_ATTENTION_OWNER:-}"
 write_verified=""
@@ -911,6 +918,8 @@ while [ "$#" -gt 0 ]; do
 					else
 						wrap_commands="$wrap_commands $1"
 					fi
+				elif [ "$state" = "activity" ] && [ -z "$activity_value" ]; then
+					activity_value="$1"
 					shift
 					continue
 				else
@@ -972,6 +981,15 @@ case "$state" in
 			usage >&2
 			exit 2
 		fi
+		;;
+	activity)
+		case "$activity_value" in
+			*"$_tab_char"*|*"$_nl_char"*)
+				printf 'tmux-attention: activity must not contain tabs or newlines\n' >&2
+				usage >&2
+				exit 2
+				;;
+		esac
 		;;
 	get|list|turn-start|turn-active|turn-stop|turn-done|refresh|claim|disown)
 		;;
@@ -1099,6 +1117,14 @@ esac
 owner_matches || exit 1
 
 case "$state" in
+	activity)
+		require_target
+		if [ "$activity_value" = "--clear" ]; then
+			activity_value=""
+		fi
+		tmux set-option -pq -t "$target" @agent_pane_activity "$activity_value"
+		recompute_window_summary
+		;;
 	refresh)
 		recompute_window_summary
 		exit $?

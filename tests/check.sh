@@ -228,6 +228,25 @@ assert_eq "FLYWL-4242" "$(tmux_test show-window-option -t "$idle_pane" -v @agent
 assert_eq "FLYWL-4242" "$(tmux_test display-message -p -t "$idle_pane" '#{E:@tmux_attention_context}')" "context format renders the idle ticket with no active turn"
 assert_eq "FLYWL-4242" "$(tmux_test display-message -p -t "$idle_pane" '#{E:@tmux_attention_tab_label}')" "tab label renders the idle ticket"
 
+# Activity layer: a verb rides alongside the project without replacing it, and is opt-in.
+"$ROOT_DIR/scripts/tmux-attention" turn-start --target "$idle_pane" --project ACT-1
+"$ROOT_DIR/scripts/tmux-attention" activity --target "$idle_pane" rebasing
+assert_eq "rebasing" "$(tmux_test show-options -pqv -t "$idle_pane" @agent_pane_activity)" "activity stores a pane-local verb"
+assert_eq "rebasing" "$(tmux_test show-window-option -t "$idle_pane" -v @agent_context_activity)" "activity rolls into the window summary"
+assert_eq "ACT-1" "$(tmux_test display-message -p -t "$idle_pane" '#{E:@tmux_attention_context}')" "activity is hidden while show-activity is off"
+
+tmux_test set-option -g @tmux_attention_show_activity "on"
+assert_eq "ACT-1 rebasing" "$(tmux_test display-message -p -t "$idle_pane" '#{E:@tmux_attention_context}')" "activity appends to the project when enabled"
+assert_eq "ACT-1 rebasing" "$(tmux_test display-message -p -t "$idle_pane" '#{E:@tmux_attention_tab_label}')" "tab label also shows the activity"
+
+"$ROOT_DIR/scripts/tmux-attention" activity --target "$idle_pane" --clear
+assert_eq "ACT-1" "$(tmux_test display-message -p -t "$idle_pane" '#{E:@tmux_attention_context}')" "activity can be cleared"
+
+"$ROOT_DIR/scripts/tmux-attention" activity --target "$idle_pane" testing
+"$ROOT_DIR/scripts/tmux-attention" turn-stop --target "$idle_pane"
+assert_eq "" "$(tmux_test show-options -pqv -t "$idle_pane" @agent_pane_activity)" "turn-stop clears a stale activity"
+tmux_test set-option -g @tmux_attention_show_activity "off"
+
 # Dirty marker: a derived label flags uncommitted changes, and the marker is configurable.
 printf 'change\n' >"$idle_repo/tracked.txt"
 (cd "$idle_repo" && git add tracked.txt && git -c user.email=t@example.com -c user.name=t commit -q -m add) >/dev/null 2>&1

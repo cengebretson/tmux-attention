@@ -13,6 +13,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   not only during them.
 - `@tmux_attention_tab_label` format for `window-status-format`, resolving the
   active project, then the idle label, then `window_name`.
+- `activity <verb>` / `activity --clear` subcommand storing `@agent_pane_activity`, summarised
+  as `@agent_context_activity`, appended to the labels when `@tmux_attention_show_activity` is
+  `on` (default off). Cleared by `turn-stop` and `turn-done`.
 - `@tmux_attention_dirty_marker` (default `*`) appends a hint to a derived label when
   the tree has uncommitted changes.
 - `@tmux_attention_worktree_hint` (default off) appends `@<worktree-dir>` inside a linked

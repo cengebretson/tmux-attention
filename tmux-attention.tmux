@@ -36,12 +36,19 @@ set_default_option "@tmux_attention_tab_icon" "#{?#{==:#{@agent_attention},input
 # the raw pane directory when the summary has never run for this window. The point of the
 # idle tier is that "which ticket is this window" is useful between turns too, not just
 # while an agent is mid-turn; @tmux_attention_icon_working still distinguishes the two.
-set_default_option "@tmux_attention_context" "#{?#{==:#{@agent_context_active},1},#{@agent_context_project},#{?#{!=:#{@agent_context_idle_project},},#{@agent_context_idle_project},#{b:pane_current_path}}}"
+# Activity suffix is opt-in and off by default. A verb changes on every tool call while the
+# status bar repaints on status-interval, so what you read is a sample of what the agent was
+# doing some seconds ago; the working icon already answers "is something running here". Set
+# @tmux_attention_show_activity to "on" if the extra detail is worth that to you.
+set_default_option "@tmux_attention_show_activity" "off"
+set_default_option "@tmux_attention_activity_suffix" "#{?#{&&:#{==:#{@tmux_attention_show_activity},on},#{!=:#{@agent_context_activity},}}, #{@agent_context_activity},}"
+
+set_default_option "@tmux_attention_context" "#{?#{==:#{@agent_context_active},1},#{@agent_context_project}#{E:@tmux_attention_activity_suffix},#{?#{!=:#{@agent_context_idle_project},},#{@agent_context_idle_project},#{b:pane_current_path}}}"
 
 # Same resolution for window tabs, but falling back to the window name rather than a
 # directory, since that is what a tab shows by default. Pair it with
 # @tmux_attention_tab_icon in window-status-format.
-set_default_option "@tmux_attention_tab_label" "#{?#{==:#{@agent_context_active},1},#{@agent_context_project},#{?#{!=:#{@agent_context_idle_project},},#{@agent_context_idle_project},#{window_name}}}"
+set_default_option "@tmux_attention_tab_label" "#{?#{==:#{@agent_context_active},1},#{@agent_context_project}#{E:@tmux_attention_activity_suffix},#{?#{!=:#{@agent_context_idle_project},},#{@agent_context_idle_project},#{window_name}}}"
 
 # Re-clear the marker shortly after its pane is actually viewed. Cover every
 # way a pane becomes visible: selecting its window (after-select-window), attaching a
