@@ -493,6 +493,18 @@ recompute_window_summary() {
 		context_updated_at="$(printf '%s\n' "$context_row" | sed -n '3p')"
 	fi
 
+	# Idle label: what to show when no agent turn is active. Derived from the window's
+	# ACTIVE pane rather than the agent pane, because with no turn running the thing the
+	# user is looking at is the active pane. Recomputed on the same hooks as the rest of
+	# this summary, so it tracks branch and directory changes as soon as the window is
+	# focused again. Falls back inside `derive_project` to the repo name, then the
+	# directory name, so it is never empty for a real pane.
+	idle_path="$(tmux display-message -p -t "$window_id" '#{pane_current_path}' 2>/dev/null || printf '')"
+	idle_project=""
+	if [ -n "$idle_path" ]; then
+		idle_project="$(derive_project "$idle_path")"
+	fi
+
 	# These window options are a derived compatibility/status summary. Pane
 	# options above remain authoritative when more than one agent shares a window.
 	tmux set-window-option -q -t "$window_id" @agent_attention "$attention_state" \; \
@@ -502,7 +514,8 @@ recompute_window_summary() {
 		set-window-option -q -t "$window_id" @agent_context_active "$context_active" \; \
 		set-window-option -q -t "$window_id" @agent_context_project "$context_project" \; \
 		set-window-option -q -t "$window_id" @agent_context_pane "$context_pane" \; \
-		set-window-option -q -t "$window_id" @agent_context_updated_at "$context_updated_at"
+		set-window-option -q -t "$window_id" @agent_context_updated_at "$context_updated_at" \; \
+		set-window-option -q -t "$window_id" @agent_context_idle_project "$idle_project"
 }
 
 derive_project() {

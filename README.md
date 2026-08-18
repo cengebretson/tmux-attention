@@ -299,9 +299,24 @@ event. While active, `#{E:@tmux_attention_context}` renders:
 FLYWL-2533
 ```
 
-When no agent turn is active, the same format renders the basename of
-`pane_current_path`, so ordinary tmux windows keep their normal project
-display.
+When no agent turn is active, the format falls back to an **idle label** derived
+from the window's active pane using the same resolution order below, so a window
+keeps identifying its ticket between turns rather than reverting to a directory
+name. `@tmux_attention_icon_working` still distinguishes an active turn from an
+idle window. The raw `pane_current_path` basename remains the last resort for a
+window the summary has never run for.
+
+`#{E:@tmux_attention_tab_label}` resolves the same way but falls back to
+`window_name` instead of a directory, for use in `window-status-format`:
+
+```tmux
+set -g window-status-format "#{E:@tmux_attention_tab_icon} #{E:@tmux_attention_tab_label}"
+```
+
+The idle label is recomputed on `after-select-window`, `client-attached`,
+`client-session-changed`, and `pane-focus-in`, i.e. whenever you look at
+something else. It is deliberately not cached on the pane path, because
+`git checkout` changes the branch without changing the directory.
 
 `turn-start` derives its project label in this order:
 
@@ -323,7 +338,8 @@ The authoritative context pane options are:
 
 The derived `@agent_context_active`, `@agent_context_project`,
 `@agent_context_pane`, and `@agent_context_updated_at` window options preserve
-the existing status-format contract.
+the existing status-format contract. `@agent_context_idle_project` carries the
+idle label described above.
 
 `turn-stop` clears only active-turn context. `turn-done` performs the normal
 completed-response transition: it clears that context and sets the pane's
