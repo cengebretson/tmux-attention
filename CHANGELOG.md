@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-08-18
+
 ### Added
 
 - `@agent_context_idle_project` window option holding a ticket label derived from
@@ -328,7 +330,8 @@ who can run tmux can set the option too.
   server and a GitHub Actions CI workflow running ShellCheck and the tests.
 - Documentation: `README.md` and `docs/hooks.md`.
 
-[Unreleased]: https://github.com/cengebretson/tmux-attention/compare/v0.8.1...HEAD
+[Unreleased]: https://github.com/cengebretson/tmux-attention/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/cengebretson/tmux-attention/compare/v0.8.1...v0.9.0
 [0.8.1]: https://github.com/cengebretson/tmux-attention/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/cengebretson/tmux-attention/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/cengebretson/tmux-attention/compare/v0.6.2...v0.7.0
