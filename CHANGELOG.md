@@ -6,6 +6,30 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `@agent_context_idle_project` window option holding a ticket label derived from
+  the window's active pane, so context is identifiable between agent turns and
+  not only during them.
+- `@tmux_attention_tab_label` format for `window-status-format`, resolving the
+  active project, then the idle label, then `window_name`.
+- `activity <verb>` / `activity --clear` subcommand storing `@agent_pane_activity`, summarised
+  as `@agent_context_activity`, appended to the labels when `@tmux_attention_show_activity` is
+  `on` (default off). Cleared by `turn-stop` and `turn-done`.
+- `@tmux_attention_dirty_marker` (default `*`) appends a hint to a derived label when
+  the tree has uncommitted changes.
+- `@tmux_attention_worktree_hint` (default off) appends `@<worktree-dir>` inside a linked
+  worktree.
+- `refresh` is now wired to `after-select-window`, `client-attached`,
+  `client-session-changed`, and `pane-focus-in`. Previously the window summary was
+  only recomputed on a turn boundary or `after-kill-pane`, so a freshly attached
+  server had no idle label at all.
+
+### Changed
+
+- `@tmux_attention_context` now falls back to the idle label before the raw
+  `pane_current_path` basename. Windows that never run an agent are unaffected.
+
 ## [0.8.1] - 2026-08-16
 
 ### Fixed

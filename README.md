@@ -299,9 +299,48 @@ event. While active, `#{E:@tmux_attention_context}` renders:
 FLYWL-2533
 ```
 
-When no agent turn is active, the same format renders the basename of
-`pane_current_path`, so ordinary tmux windows keep their normal project
-display.
+When no agent turn is active, the format falls back to an **idle label** derived
+from the window's active pane using the same resolution order below, so a window
+keeps identifying its ticket between turns rather than reverting to a directory
+name. `@tmux_attention_icon_working` still distinguishes an active turn from an
+idle window. The raw `pane_current_path` basename remains the last resort for a
+window the summary has never run for.
+
+`#{E:@tmux_attention_tab_label}` resolves the same way but falls back to
+`window_name` instead of a directory, for use in `window-status-format`:
+
+```tmux
+set -g window-status-format "#{E:@tmux_attention_tab_icon} #{E:@tmux_attention_tab_label}"
+```
+
+The idle label is recomputed on `after-select-window`, `client-attached`,
+`client-session-changed`, and `pane-focus-in`, i.e. whenever you look at
+something else. Two optional suffixes refine a **derived** label (an explicit
+`turn-start --project` value is never modified):
+
+| Option | Default | Effect |
+|--------|---------|--------|
+| `@tmux_attention_dirty_marker` | `*` | Appended when the tree has uncommitted changes. Set to `off` to disable, or to any string to change the glyph. |
+| `@tmux_attention_worktree_hint` | off | Set `on` to append `@<worktree-dir>` inside a linked worktree, so two worktrees on branches sharing a ticket are distinguishable. Keyed on "is this a linked worktree" rather than a cross-window collision scan, because a scan's result depends on the order windows refresh and the labels would flap. | It is deliberately not cached on the pane path, because
+`git checkout` changes the branch without changing the directory.
+
+### Activity
+
+`activity <verb>` stores a short word on the pane describing what an agent is doing right
+now, and `activity --clear` removes it. It layers *after* the project label instead of
+replacing it, so the ticket survives; `turn-stop` and `turn-done` clear it so a finished turn
+cannot leave a stale verb behind.
+
+Hidden by default. Set `@tmux_attention_show_activity` to `on` to append it. It is off by
+default on purpose: the status bar repaints on `status-interval`, so a verb that changes with
+every tool call reads as a random sample of what the agent was doing some seconds ago, and
+`@tmux_attention_icon_working` already answers "is something running here".
+
+| Option | Default | Effect |
+|--------|---------|--------|
+| `@tmux_attention_show_activity` | off | Set `on` to append the activity to the context and tab labels. |
+| `@agent_pane_activity` | - | Pane option holding the verb. |
+| `@agent_context_activity` | - | Window summary of the active pane's verb. |
 
 `turn-start` derives its project label in this order:
 
@@ -323,7 +362,8 @@ The authoritative context pane options are:
 
 The derived `@agent_context_active`, `@agent_context_project`,
 `@agent_context_pane`, and `@agent_context_updated_at` window options preserve
-the existing status-format contract.
+the existing status-format contract. `@agent_context_idle_project` carries the
+idle label described above.
 
 `turn-stop` clears only active-turn context. `turn-done` performs the normal
 completed-response transition: it clears that context and sets the pane's

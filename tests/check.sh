@@ -200,8 +200,115 @@ assert_eq "1" "$(tmux_test show-window-option -t "$target_pane" -v @agent_contex
 
 "$ROOT_DIR/scripts/tmux-attention" turn-stop --target "$other_pane"
 assert_eq "" "$(tmux_test show-window-option -t "$target_pane" -v @agent_context_active)" "window summary clears after the final pane agent stops"
-expected_path="$(tmux_test display-message -p -t "$target_pane" '#{b:pane_current_path}')"
-assert_eq "$expected_path" "$(tmux_test display-message -p -t "$target_pane" '#{E:@tmux_attention_context}')" "context format falls back to pane directory"
+# Last-resort tier: a pane outside any repo falls back to the directory basename. Uses a
+# dedicated non-git directory rather than the pane the suite happens to start in, because
+# that pane sits inside this checkout, so the assertion used to depend on whether the
+# developer's tree was clean and on whether its branch carried a ticket.
+plain_dir="$TMP_BIN/not-a-repo"
+mkdir -p "$plain_dir"
+nogit_pane="$(tmux_test new-window -d -P -F '#{pane_id}' -n nogit -c "$plain_dir")"
+"$ROOT_DIR/scripts/tmux-attention" refresh --target "$nogit_pane"
+assert_eq "not-a-repo" "$(tmux_test show-window-option -t "$nogit_pane" -v @agent_context_idle_project)" "idle label falls back to the directory outside a repo"
+assert_eq "not-a-repo" "$(tmux_test display-message -p -t "$nogit_pane" '#{E:@tmux_attention_context}')" "context format falls back to the directory outside a repo"
+
+# Idle tier: with no turn running, the context label should still identify the window by
+# ticket when the pane sits in a repo on a ticket branch. Without this the status bar shows
+# a directory name, which is the same for every worktree of the same repo.
+idle_repo="$TMP_BIN/idle-repo"
+mkdir -p "$idle_repo"
+(
+	cd "$idle_repo" &&
+		git init -q . &&
+		git -c user.email=t@example.com -c user.name=t commit -q --allow-empty -m init &&
+		git checkout -q -b feature/FLYWL-4242-idle-label
+) >/dev/null 2>&1
+idle_pane="$(tmux_test new-window -d -P -F '#{pane_id}' -n idle -c "$idle_repo")"
+"$ROOT_DIR/scripts/tmux-attention" refresh --target "$idle_pane"
+assert_eq "FLYWL-4242" "$(tmux_test show-window-option -t "$idle_pane" -v @agent_context_idle_project)" "refresh derives an idle project from the branch ticket"
+assert_eq "FLYWL-4242" "$(tmux_test display-message -p -t "$idle_pane" '#{E:@tmux_attention_context}')" "context format renders the idle ticket with no active turn"
+assert_eq "FLYWL-4242" "$(tmux_test display-message -p -t "$idle_pane" '#{E:@tmux_attention_tab_label}')" "tab label renders the idle ticket"
+
+# Activity layer: a verb rides alongside the project without replacing it, and is opt-in.
+"$ROOT_DIR/scripts/tmux-attention" turn-start --target "$idle_pane" --project ACT-1
+"$ROOT_DIR/scripts/tmux-attention" activity --target "$idle_pane" rebasing
+assert_eq "rebasing" "$(tmux_test show-options -pqv -t "$idle_pane" @agent_pane_activity)" "activity stores a pane-local verb"
+assert_eq "rebasing" "$(tmux_test show-window-option -t "$idle_pane" -v @agent_context_activity)" "activity rolls into the window summary"
+assert_eq "ACT-1" "$(tmux_test display-message -p -t "$idle_pane" '#{E:@tmux_attention_context}')" "activity is hidden while show-activity is off"
+
+tmux_test set-option -g @tmux_attention_show_activity "on"
+assert_eq "ACT-1 rebasing" "$(tmux_test display-message -p -t "$idle_pane" '#{E:@tmux_attention_context}')" "activity appends to the project when enabled"
+assert_eq "ACT-1 rebasing" "$(tmux_test display-message -p -t "$idle_pane" '#{E:@tmux_attention_tab_label}')" "tab label also shows the activity"
+
+"$ROOT_DIR/scripts/tmux-attention" activity --target "$idle_pane" --clear
+assert_eq "ACT-1" "$(tmux_test display-message -p -t "$idle_pane" '#{E:@tmux_attention_context}')" "activity can be cleared"
+
+"$ROOT_DIR/scripts/tmux-attention" activity --target "$idle_pane" testing
+"$ROOT_DIR/scripts/tmux-attention" turn-stop --target "$idle_pane"
+assert_eq "" "$(tmux_test show-options -pqv -t "$idle_pane" @agent_pane_activity)" "turn-stop clears a stale activity"
+tmux_test set-option -g @tmux_attention_show_activity "off"
+
+# Dirty marker: a derived label flags uncommitted changes, and the marker is configurable.
+printf 'change\n' >"$idle_repo/tracked.txt"
+(cd "$idle_repo" && git add tracked.txt && git -c user.email=t@example.com -c user.name=t commit -q -m add) >/dev/null 2>&1
+printf 'edited\n' >>"$idle_repo/tracked.txt"
+"$ROOT_DIR/scripts/tmux-attention" refresh --target "$idle_pane"
+assert_eq "FLYWL-4242*" "$(tmux_test show-window-option -t "$idle_pane" -v @agent_context_idle_project)" "dirty tree appends the default marker"
+
+tmux_test set-option -g @tmux_attention_dirty_marker "off"
+"$ROOT_DIR/scripts/tmux-attention" refresh --target "$idle_pane"
+assert_eq "FLYWL-4242" "$(tmux_test show-window-option -t "$idle_pane" -v @agent_context_idle_project)" "dirty marker can be turned off"
+
+tmux_test set-option -g @tmux_attention_dirty_marker "~"
+"$ROOT_DIR/scripts/tmux-attention" refresh --target "$idle_pane"
+assert_eq "FLYWL-4242~" "$(tmux_test show-window-option -t "$idle_pane" -v @agent_context_idle_project)" "dirty marker is configurable"
+
+tmux_test set-option -g @tmux_attention_dirty_marker "off"
+(cd "$idle_repo" && git checkout -q -- tracked.txt) >/dev/null 2>&1
+"$ROOT_DIR/scripts/tmux-attention" refresh --target "$idle_pane"
+assert_eq "FLYWL-4242" "$(tmux_test show-window-option -t "$idle_pane" -v @agent_context_idle_project)" "clean tree drops the marker"
+
+# Worktree hint is opt-in and off by default.
+wt_path="$TMP_BIN/wt-FLYWL-4242-second"
+(cd "$idle_repo" && git worktree add -q -b feature/FLYWL-4242-second "$wt_path") >/dev/null 2>&1
+wt_pane="$(tmux_test new-window -d -P -F '#{pane_id}' -n wt -c "$wt_path")"
+"$ROOT_DIR/scripts/tmux-attention" refresh --target "$wt_pane"
+assert_eq "FLYWL-4242" "$(tmux_test show-window-option -t "$wt_pane" -v @agent_context_idle_project)" "worktree hint is off by default"
+
+tmux_test set-option -g @tmux_attention_worktree_hint "on"
+"$ROOT_DIR/scripts/tmux-attention" refresh --target "$wt_pane"
+assert_eq "FLYWL-4242@wt-FLYWL-4242-second" "$(tmux_test show-window-option -t "$wt_pane" -v @agent_context_idle_project)" "worktree hint disambiguates a linked worktree"
+
+"$ROOT_DIR/scripts/tmux-attention" refresh --target "$idle_pane"
+assert_eq "FLYWL-4242" "$(tmux_test show-window-option -t "$idle_pane" -v @agent_context_idle_project)" "worktree hint is not added to the main checkout"
+tmux_test set-option -g @tmux_attention_worktree_hint "off"
+
+# An active turn still wins over the idle label.
+"$ROOT_DIR/scripts/tmux-attention" turn-start --target "$idle_pane" --project OVERRIDE-1
+assert_eq "OVERRIDE-1" "$(tmux_test display-message -p -t "$idle_pane" '#{E:@tmux_attention_context}')" "active project outranks the idle label"
+assert_eq "OVERRIDE-1" "$(tmux_test display-message -p -t "$idle_pane" '#{E:@tmux_attention_tab_label}')" "tab label prefers the active project"
+"$ROOT_DIR/scripts/tmux-attention" turn-stop --target "$idle_pane"
+assert_eq "FLYWL-4242" "$(tmux_test display-message -p -t "$idle_pane" '#{E:@tmux_attention_context}')" "context returns to the idle ticket after the turn stops"
+
+# The refresh hook must actually be registered, or the idle label silently stays empty and
+# the whole feature is inert. This is the wiring that was missing when the label was added.
+# Query each event by name: a bare `show-hooks -g` omits pane-scoped events such as
+# pane-focus-in, so asserting against the full dump would report a false miss.
+for hook_event in after-select-window client-attached client-session-changed pane-focus-in; do
+	hook_out="$(tmux_test show-hooks -g "$hook_event" 2>/dev/null || printf '')"
+	assert_contains "refresh --target" "$hook_out" "refresh is wired to $hook_event"
+done
+
+# End to end: selecting a window should populate the idle label via the hook, with no
+# explicit refresh call. Clear it first so a stale value cannot make this pass.
+tmux_test set-window-option -t "$idle_pane" @agent_context_idle_project ""
+tmux_test select-window -t "$idle_pane"
+sleep 2
+assert_eq "FLYWL-4242" "$(tmux_test show-window-option -t "$idle_pane" -v @agent_context_idle_project)" "after-select-window hook repopulates the idle label"
+
+# Tab label falls back to the window name, not a directory, when nothing better exists.
+plain_pane="$(tmux_test new-window -d -P -F '#{pane_id}' -n plainwin -c "$TMP_BIN")"
+tmux_test set-window-option -t "$plain_pane" @agent_context_idle_project ""
+assert_eq "plainwin" "$(tmux_test display-message -p -t "$plain_pane" '#{E:@tmux_attention_tab_label}')" "tab label falls back to the window name"
 
 "$ROOT_DIR/scripts/tmux-attention" clear --target "$other_pane"
 "$ROOT_DIR/scripts/tmux-attention" turn-start --target "$target_pane" --project RESPONSE-READY
@@ -213,7 +320,10 @@ assert_eq "codex" "$(tmux_test show-options -pqv -t "$target_pane" @agent_pane_a
 assert_eq "response_ready" "$(tmux_test show-options -pqv -t "$target_pane" @agent_pane_attention_reason)" "turn-done records response-ready reason"
 assert_eq "done" "$(tmux_test show-window-option -t "$target_pane" -v @agent_attention)" "turn-done derives done window summary"
 assert_eq "" "$(tmux_test show-window-option -t "$target_pane" -v @agent_context_active)" "turn-done clears derived window context"
-assert_eq "$expected_path" "$(tmux_test display-message -p -t "$target_pane" '#{E:@tmux_attention_context}')" "turn-done restores pane-directory context"
+# turn-done ends the turn, so the context must drop back to the idle tier rather than keep
+# showing the finished turn's project. Compared against the window's own idle label so this
+# does not depend on where the suite is checked out.
+assert_eq "$(tmux_test show-window-option -t "$target_pane" -v @agent_context_idle_project)" "$(tmux_test display-message -p -t "$target_pane" '#{E:@tmux_attention_context}')" "turn-done restores idle context"
 
 "$ROOT_DIR/scripts/tmux-attention" turn-active --target "$target_pane" --project CONTINUED
 assert_eq "" "$(tmux_test show-options -pqv -t "$target_pane" @agent_pane_attention)" "turn-active clears a premature response-ready marker"
