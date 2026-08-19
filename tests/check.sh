@@ -114,6 +114,7 @@ context_status="$(tmux_test show-option -gqv @tmux_attention_context)"
 assert_contains "@agent_context_active" "$context_status" "context format reads active agent state"
 assert_contains "pane_current_path" "$context_status" "context format falls back to pane current path"
 assert_eq "preserve" "$(tmux_test show-option -gqv @tmux_attention_tab_mode)" "tab mode preserves deliberate names by default"
+assert_eq " · " "$(tmux_test show-option -gqv @tmux_attention_project_separator)" "project slug separator has a readable default"
 assert_contains "@tmux_attention_tab_specific" "$(tmux_test show-option -gqv @tmux_attention_tab_label)" "tab label supports specific smart context"
 
 assert_contains "after-select-window[90]" "$(tmux_test show-hook -g after-select-window)" "after-select-window hook is installed at stable index"
@@ -237,19 +238,25 @@ assert_eq "FLYWL-4242" "$(tmux_test display-message -p -t "$idle_pane" '#{E:@tmu
 
 # An agent can publish semantic task context once and keep it across turns. This is
 # intentionally separate from turn-start --project, which remains a one-turn override.
-"$ROOT_DIR/scripts/tmux-attention" project set AGENT-77 --target "$idle_pane"
+"$ROOT_DIR/scripts/tmux-attention" project set AGENT-77 --slug borrower-dashboard --target "$idle_pane"
 assert_eq "AGENT-77" "$(tmux_test show-options -pqv -t "$idle_pane" @agent_pane_context_override)" "project set stores a pane-local override"
-assert_eq "AGENT-77" "$(tmux_test show-window-option -t "$idle_pane" -v @agent_context_idle_project)" "project override replaces the idle label"
+assert_eq "borrower-dashboard" "$(tmux_test show-options -pqv -t "$idle_pane" @agent_pane_context_slug)" "project set stores a separate descriptive slug"
+assert_eq "AGENT-77 · borrower-dashboard" "$(tmux_test show-window-option -t "$idle_pane" -v @agent_context_idle_project)" "project slug enriches the idle status label"
+assert_eq "AGENT-77" "$(tmux_test show-window-option -t "$idle_pane" -v @agent_context_idle_tab_project)" "idle tab project remains compact"
 assert_eq "1" "$(tmux_test show-window-option -t "$idle_pane" -v @agent_context_idle_specific)" "project override is meaningful smart-tab context"
 
 "$ROOT_DIR/scripts/tmux-attention" turn-start --target "$idle_pane"
-assert_eq "AGENT-77" "$(tmux_test show-window-option -t "$idle_pane" -v @agent_context_project)" "turn-start reuses the persistent project override"
+assert_eq "AGENT-77 · borrower-dashboard" "$(tmux_test show-window-option -t "$idle_pane" -v @agent_context_project)" "turn-start reuses the persistent project and slug"
+assert_eq "AGENT-77" "$(tmux_test show-window-option -t "$idle_pane" -v @agent_context_tab_project)" "active tab project remains compact"
 "$ROOT_DIR/scripts/tmux-attention" turn-done --target "$idle_pane"
 assert_eq "AGENT-77" "$(tmux_test show-options -pqv -t "$idle_pane" @agent_pane_context_override)" "turn-done preserves the project override"
-assert_eq "AGENT-77" "$(tmux_test display-message -p -t "$idle_pane" '#{E:@tmux_attention_context}')" "completed turn keeps the declared project visible"
+assert_eq "borrower-dashboard" "$(tmux_test show-options -pqv -t "$idle_pane" @agent_pane_context_slug)" "turn-done preserves the project slug"
+assert_eq "AGENT-77 · borrower-dashboard" "$(tmux_test display-message -p -t "$idle_pane" '#{E:@tmux_attention_context}')" "completed turn keeps the detailed project visible"
+assert_eq "AGENT-77" "$(tmux_test display-message -p -t "$idle_pane" '#{E:@tmux_attention_tab_label}')" "tab omits the descriptive slug"
 
 "$ROOT_DIR/scripts/tmux-attention" project clear --target "$idle_pane"
 assert_eq "" "$(tmux_test show-options -pqv -t "$idle_pane" @agent_pane_context_override)" "project clear removes the pane-local override"
+assert_eq "" "$(tmux_test show-options -pqv -t "$idle_pane" @agent_pane_context_slug)" "project clear removes the pane-local slug"
 assert_eq "FLYWL-4242" "$(tmux_test show-window-option -t "$idle_pane" -v @agent_context_idle_project)" "project clear restores automatic ticket inference"
 
 # Activity layer: a verb rides alongside the project without replacing it, and is opt-in.
@@ -261,7 +268,7 @@ assert_eq "ACT-1" "$(tmux_test display-message -p -t "$idle_pane" '#{E:@tmux_att
 
 tmux_test set-option -g @tmux_attention_show_activity "on"
 assert_eq "ACT-1 rebasing" "$(tmux_test display-message -p -t "$idle_pane" '#{E:@tmux_attention_context}')" "activity appends to the project when enabled"
-assert_eq "ACT-1 rebasing" "$(tmux_test display-message -p -t "$idle_pane" '#{E:@tmux_attention_tab_label}')" "tab label also shows the activity"
+assert_eq "ACT-1" "$(tmux_test display-message -p -t "$idle_pane" '#{E:@tmux_attention_tab_label}')" "tab label stays compact when activity is shown in status"
 
 "$ROOT_DIR/scripts/tmux-attention" activity --target "$idle_pane" --clear
 assert_eq "ACT-1" "$(tmux_test display-message -p -t "$idle_pane" '#{E:@tmux_attention_context}')" "activity can be cleared"
@@ -341,7 +348,11 @@ assert_eq "FLYWL-4242" "$(tmux_test display-message -p -t "$named_pane" '#{E:@tm
 tmux_test set-option -g @tmux_attention_tab_mode "smart"
 assert_eq "riskos · FLYWL-4242" "$(tmux_test display-message -p -t "$named_pane" '#{E:@tmux_attention_tab_label}')" "smart tab mode appends meaningful ticket context"
 
+tmux_test set-option -g @tmux_attention_tab_mode "compact"
+assert_eq "FLYWL-4242" "$(tmux_test display-message -p -t "$named_pane" '#{E:@tmux_attention_tab_label}')" "compact tab mode replaces an agent name with the ticket"
+
 # An active explicit project is also meaningful smart context.
+tmux_test set-option -g @tmux_attention_tab_mode "smart"
 "$ROOT_DIR/scripts/tmux-attention" turn-start --target "$named_pane" --project TURN-9
 assert_eq "riskos · TURN-9" "$(tmux_test display-message -p -t "$named_pane" '#{E:@tmux_attention_tab_label}')" "smart tab mode appends an explicit active project"
 assert_eq "TURN-9" "$(tmux_test display-message -p -t "$named_pane" '#{E:@tmux_attention_context}')" "context still shows the active project for a named window"
@@ -408,6 +419,10 @@ assert_contains '"project_override":null' "$target_json" "CLI JSON get reports a
 "$ROOT_DIR/scripts/tmux-attention" project set JSON-88 --target "$target_pane"
 project_json="$("$ROOT_DIR/scripts/tmux-attention" get --target "$target_pane" --format json)"
 assert_contains '"project_override":"JSON-88"' "$project_json" "CLI JSON get includes the project override"
+assert_contains '"project_slug":null' "$project_json" "CLI JSON get reports an empty project slug"
+"$ROOT_DIR/scripts/tmux-attention" project set JSON-88 --slug json-context --target "$target_pane"
+project_json="$("$ROOT_DIR/scripts/tmux-attention" get --target "$target_pane" --format json)"
+assert_contains '"project_slug":"json-context"' "$project_json" "CLI JSON get includes the project slug"
 "$ROOT_DIR/scripts/tmux-attention" project clear --target "$target_pane"
 
 list_text="$("$ROOT_DIR/scripts/tmux-attention" list --session tmux-attention-test)"
@@ -850,11 +865,12 @@ owner_pane="$(tmux_test new-window -P -F '#{pane_id}')"
 assert_eq "blocked" "$(tmux_test show-options -pqv -t "$owner_pane" @agent_pane_attention)" "unowned pane still accepts writes"
 assert_eq "" "$(tmux_test show-options -pqv -t "$owner_pane" @agent_pane_attention_verified)" "a write with no owner is recorded unverified"
 
-"$ROOT_DIR/scripts/tmux-attention" project set OLD-1 --target "$owner_pane"
+"$ROOT_DIR/scripts/tmux-attention" project set OLD-1 --slug inherited-task --target "$owner_pane"
 "$ROOT_DIR/scripts/tmux-attention" claim --owner agent-1 --target "$owner_pane"
 assert_eq "agent-1" "$(tmux_test show-options -pqv -t "$owner_pane" @agent_pane_owner)" "claim stamps the pane owner"
 assert_eq "" "$(tmux_test show-options -pqv -t "$owner_pane" @agent_pane_attention)" "claim clears the marker the pane inherited"
 assert_eq "" "$(tmux_test show-options -pqv -t "$owner_pane" @agent_pane_context_override)" "claim clears an inherited project override"
+assert_eq "" "$(tmux_test show-options -pqv -t "$owner_pane" @agent_pane_context_slug)" "claim clears an inherited project slug"
 
 "$ROOT_DIR/scripts/tmux-attention" blocked --target "$owner_pane" --owner agent-1 --source claude
 assert_eq "blocked" "$(tmux_test show-options -pqv -t "$owner_pane" @agent_pane_attention)" "matching owner may write"
@@ -872,12 +888,13 @@ assert_eq "review" "$(tmux_test show-options -pqv -t "$owner_pane" @agent_pane_a
 "$ROOT_DIR/scripts/tmux-attention" clear --target "$owner_pane"
 assert_eq "" "$(tmux_test show-options -pqv -t "$owner_pane" @agent_pane_attention)" "a caller with no owner may still clear an owned pane"
 
-"$ROOT_DIR/scripts/tmux-attention" project set OWNED-1 --target "$owner_pane"
+"$ROOT_DIR/scripts/tmux-attention" project set OWNED-1 --slug owned-task --target "$owner_pane"
 "$ROOT_DIR/scripts/tmux-attention" input --target "$owner_pane" --owner agent-1
 "$ROOT_DIR/scripts/tmux-attention" disown --target "$owner_pane"
 assert_eq "" "$(tmux_test show-options -pqv -t "$owner_pane" @agent_pane_owner)" "disown removes the stamp"
 assert_eq "" "$(tmux_test show-options -pqv -t "$owner_pane" @agent_pane_attention_verified)" "verified cannot outlive the owner that granted it"
 assert_eq "" "$(tmux_test show-options -pqv -t "$owner_pane" @agent_pane_context_override)" "disown clears the project override"
+assert_eq "" "$(tmux_test show-options -pqv -t "$owner_pane" @agent_pane_context_slug)" "disown clears the project slug"
 
 "$ROOT_DIR/scripts/tmux-attention" claim --owner agent-9 --target "$owner_pane"
 "$ROOT_DIR/scripts/tmux-attention" input --target "$owner_pane" --owner agent-9

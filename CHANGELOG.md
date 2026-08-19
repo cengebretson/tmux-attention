@@ -6,6 +6,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Add `project set <key> --slug <slug>` so the detailed status context can show
+  `FLYWL-2533 · borrower-dashboard` while window tabs retain the short key.
+- Add `@tmux_attention_tab_mode=compact`, which replaces deliberate agent names
+  with a specific Jira/project label but preserves names for generic fallbacks.
+
 ## [0.10.0] - 2026-08-19
 
 ### Added

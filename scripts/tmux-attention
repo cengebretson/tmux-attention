@@ -29,12 +29,15 @@ Usage: tmux-attention [input|blocked|review|done|clear] [--target <tmux-target>]
                       [--source <source>] [--reason <reason>]
        tmux-attention get [--target <tmux-target>] [--format text|json]
        tmux-attention list [--session <session>] [--format text|json]
-       tmux-attention turn-start [--project <project>] [--target <tmux-target>]
-       tmux-attention turn-active [--project <project>] [--target <tmux-target>]
+       tmux-attention turn-start [--project <project>] [--slug <slug>]
+                                 [--target <tmux-target>]
+       tmux-attention turn-active [--project <project>] [--slug <slug>]
+                                  [--target <tmux-target>]
        tmux-attention turn-stop [--target <tmux-target>]
        tmux-attention turn-done [--target <tmux-target>]
                                 [--source <source>] [--reason <reason>]
-       tmux-attention project set <project> [--target <tmux-target>]
+       tmux-attention project set <project> [--slug <slug>]
+                                  [--target <tmux-target>]
        tmux-attention project clear [--target <tmux-target>]
        tmux-attention refresh [--target <tmux-target>]
        tmux-attention claim --owner <id> [--target <tmux-target>]
@@ -74,10 +77,12 @@ response_ready. Use it when an agent Stop event means a completed response is
 ready for the user, rather than that an entire project or conversation ended.
 
 project set stores a pane-local project override that survives turn boundaries.
-Future turn-start/turn-active calls use it before Git branch, repository, or
-directory inference, and the idle status label keeps showing it between turns.
-project clear returns the pane to automatic inference. Pane claim/disown also
-clear the override so a recycled pane cannot inherit another agent's ticket.
+An optional --slug is appended in the detailed status context while tabs retain
+the short project key. Future turn-start/turn-active calls use the declaration
+before Git branch, repository, or directory inference, and the idle status label
+keeps showing it between turns. project clear returns the pane to automatic
+inference. Pane claim/disown also clear the declaration so a recycled pane cannot
+inherit another agent's ticket.
 
 claim stamps a pane with an owner id and clears any marker it inherited, so a
 new agent never starts wearing the previous occupant's state. A launcher runs it
@@ -351,7 +356,8 @@ claim_pane() {
 		set-option -pq -t "$target" @agent_pane_attention_reason '' \; \
 		set-option -pq -t "$target" @agent_pane_attention_updated_at '' \; \
 		set-option -pq -t "$target" @agent_pane_attention_verified '' \; \
-		set-option -pq -t "$target" @agent_pane_context_override ''
+		set-option -pq -t "$target" @agent_pane_context_override '' \; \
+		set-option -pq -t "$target" @agent_pane_context_slug ''
 	recompute_window_summary
 }
 
@@ -475,7 +481,8 @@ disown_pane() {
 	# verified it against is worse than an unverified one.
 	tmux set-option -pq -t "$target" @agent_pane_owner '' \; \
 		set-option -pq -t "$target" @agent_pane_attention_verified '' \; \
-		set-option -pq -t "$target" @agent_pane_context_override ''
+		set-option -pq -t "$target" @agent_pane_context_override '' \; \
+		set-option -pq -t "$target" @agent_pane_context_slug ''
 	recompute_window_summary
 }
 
@@ -485,7 +492,7 @@ recompute_window_summary() {
 		return 1
 	}
 	tab="$(printf '\t')"
-	pane_rows="$(tmux list-panes -t "$window_id" -F "#{pane_id}${tab}#{@agent_pane_attention}${tab}#{@agent_pane_attention_source}${tab}#{@agent_pane_attention_reason}${tab}#{@agent_pane_attention_updated_at}${tab}#{@agent_pane_context_active}${tab}#{@agent_pane_context_project}${tab}#{@agent_pane_context_updated_at}${tab}#{@agent_pane_activity}${tab}#{@agent_pane_context_specific}" 2>/dev/null)" || return 1
+	pane_rows="$(tmux list-panes -t "$window_id" -F "#{pane_id}${tab}#{@agent_pane_attention}${tab}#{@agent_pane_attention_source}${tab}#{@agent_pane_attention_reason}${tab}#{@agent_pane_attention_updated_at}${tab}#{@agent_pane_context_active}${tab}#{@agent_pane_context_project}${tab}#{@agent_pane_context_updated_at}${tab}#{@agent_pane_activity}${tab}#{@agent_pane_context_specific}${tab}#{@agent_pane_context_tab_project}" 2>/dev/null)" || return 1
 
 	attention_row="$(
 		printf '%s\n' "$pane_rows" |
@@ -533,9 +540,10 @@ recompute_window_summary() {
 				best_updated_at = $8
 				best_activity = $9
 				best_specific = $10
+				best_tab_project = $11
 			}
 			END {
-				if (best_pane != "") printf "%s\n%s\n%s\n%s\n%s\n", best_project, best_pane, best_updated_at, best_activity, best_specific
+				if (best_pane != "") printf "%s\n%s\n%s\n%s\n%s\n%s\n", best_project, best_pane, best_updated_at, best_activity, best_specific, best_tab_project
 			}'
 	)"
 	context_active=""
@@ -544,6 +552,7 @@ recompute_window_summary() {
 	context_pane=""
 	context_updated_at=""
 	context_specific=""
+	context_tab_project=""
 	if [ -n "$context_row" ]; then
 		context_active="1"
 		context_project="$(printf '%s\n' "$context_row" | sed -n '1p')"
@@ -551,6 +560,8 @@ recompute_window_summary() {
 		context_updated_at="$(printf '%s\n' "$context_row" | sed -n '3p')"
 		context_activity="$(printf '%s\n' "$context_row" | sed -n '4p')"
 		context_specific="$(printf '%s\n' "$context_row" | sed -n '5p')"
+		context_tab_project="$(printf '%s\n' "$context_row" | sed -n '6p')"
+		[ -n "$context_tab_project" ] || context_tab_project="$context_project"
 	fi
 
 	# Idle label: what to show when no agent turn is active. Derived from the window's
@@ -559,18 +570,23 @@ recompute_window_summary() {
 	# this summary, so it tracks branch and directory changes as soon as the window is
 	# focused again. Falls back inside `derive_project_details` to the repo name, then the
 	# directory name, so it is never empty for a real pane.
-	idle_fields="$(tmux display-message -p -t "$window_id" "#{pane_current_path}${tab}#{@agent_pane_context_override}" 2>/dev/null || printf '')"
+	idle_fields="$(tmux display-message -p -t "$window_id" "#{pane_current_path}${tab}#{@agent_pane_context_override}${tab}#{@agent_pane_context_slug}" 2>/dev/null || printf '')"
 	idle_path="${idle_fields%%"$tab"*}"
-	idle_override="${idle_fields#*"$tab"}"
+	idle_rest="${idle_fields#*"$tab"}"
+	idle_override="${idle_rest%%"$tab"*}"
+	idle_slug="${idle_rest#*"$tab"}"
 	idle_project=""
 	idle_specific=""
+	idle_tab_project=""
 	if [ -n "$idle_override" ]; then
-		idle_project="$idle_override"
+		idle_project="$(format_declared_project "$idle_override" "$idle_slug")"
 		idle_specific="1"
+		idle_tab_project="$idle_override"
 	elif [ -n "$idle_path" ]; then
 		idle_details="$(derive_project_details "$idle_path")"
 		idle_project="$(printf '%s\n' "$idle_details" | sed -n '1p')"
 		idle_specific="$(printf '%s\n' "$idle_details" | sed -n '2p')"
+		idle_tab_project="$(printf '%s\n' "$idle_details" | sed -n '3p')"
 	fi
 
 	# These window options are a derived compatibility/status summary. Pane
@@ -581,12 +597,27 @@ recompute_window_summary() {
 		set-window-option -q -t "$window_id" @agent_attention_updated_at "$attention_updated_at" \; \
 		set-window-option -q -t "$window_id" @agent_context_active "$context_active" \; \
 		set-window-option -q -t "$window_id" @agent_context_project "$context_project" \; \
+		set-window-option -q -t "$window_id" @agent_context_tab_project "$context_tab_project" \; \
 		set-window-option -q -t "$window_id" @agent_context_pane "$context_pane" \; \
 		set-window-option -q -t "$window_id" @agent_context_updated_at "$context_updated_at" \; \
 		set-window-option -q -t "$window_id" @agent_context_specific "$context_specific" \; \
 		set-window-option -q -t "$window_id" @agent_context_idle_project "$idle_project" \; \
+		set-window-option -q -t "$window_id" @agent_context_idle_tab_project "$idle_tab_project" \; \
 		set-window-option -q -t "$window_id" @agent_context_idle_specific "$idle_specific" \; \
 		set-window-option -q -t "$window_id" @agent_context_activity "$context_activity"
+}
+
+format_declared_project() {
+	declared_project="$1"
+	declared_slug="$2"
+	if [ -z "$declared_slug" ]; then
+		printf '%s' "$declared_project"
+		return 0
+	fi
+
+	project_separator="$(tmux show-option -gqv @tmux_attention_project_separator 2>/dev/null || printf '')"
+	[ -n "$project_separator" ] || project_separator=" · "
+	printf '%s%s%s' "$declared_project" "$project_separator" "$declared_slug"
 }
 
 derive_project_details() {
@@ -650,15 +681,18 @@ derive_project_details() {
 	if [ -n "$context_ticket" ]; then
 		context_label="$context_ticket$context_suffix"
 		context_specific="1"
+		context_tab_label="$context_ticket"
 	elif [ -n "$context_root" ]; then
 		context_label="${context_root##*/}$context_suffix"
 		context_specific="$context_linked_worktree"
+		context_tab_label="${context_root##*/}"
 	else
 		context_path="${context_path%/}"
 		context_label="${context_path##*/}"
+		context_tab_label="$context_label"
 	fi
 
-	printf '%s\n%s\n' "$context_label" "$context_specific"
+	printf '%s\n%s\n%s\n' "$context_label" "$context_specific" "$context_tab_label"
 }
 
 set_turn_start() {
@@ -668,13 +702,23 @@ set_turn_start() {
 	}
 
 	context_specific="1"
-	if [ -z "$project" ]; then
+	context_tab_project=""
+	if [ -n "$project" ]; then
+		context_tab_project="$project"
+		project="$(format_declared_project "$project" "$project_slug")"
+	else
 		project="$(get_pane_option @agent_pane_context_override)"
+		if [ -n "$project" ]; then
+			context_tab_project="$project"
+			project_slug="$(get_pane_option @agent_pane_context_slug)"
+			project="$(format_declared_project "$project" "$project_slug")"
+		fi
 	fi
 	if [ -z "$project" ]; then
 		context_details="$(derive_project_details "$context_path")"
 		project="$(printf '%s\n' "$context_details" | sed -n '1p')"
 		context_specific="$(printf '%s\n' "$context_details" | sed -n '2p')"
+		context_tab_project="$(printf '%s\n' "$context_details" | sed -n '3p')"
 	fi
 
 	# A submitted prompt both begins this pane's active turn and resolves this
@@ -685,6 +729,7 @@ set_turn_start() {
 		set-option -pq -t "$target" @agent_pane_attention_updated_at '' \; \
 		set-option -pq -t "$target" @agent_pane_context_active '1' \; \
 		set-option -pq -t "$target" @agent_pane_context_project "$project" \; \
+		set-option -pq -t "$target" @agent_pane_context_tab_project "$context_tab_project" \; \
 		set-option -pq -t "$target" @agent_pane_context_specific "$context_specific" \; \
 		set-option -pq -t "$target" @agent_pane_context_updated_at "$(date +%s)"
 	recompute_window_summary
@@ -698,19 +743,25 @@ set_project_override() {
 
 	case "$project_action" in
 		set)
-			tmux set-option -pq -t "$target" @agent_pane_context_override "$project"
+			project_label="$(format_declared_project "$project" "$project_slug")"
+			tmux set-option -pq -t "$target" @agent_pane_context_override "$project" \; \
+				set-option -pq -t "$target" @agent_pane_context_slug "$project_slug"
 			if [ "$(get_pane_option @agent_pane_context_active)" = "1" ]; then
-				tmux set-option -pq -t "$target" @agent_pane_context_project "$project" \; \
+				tmux set-option -pq -t "$target" @agent_pane_context_project "$project_label" \; \
+					set-option -pq -t "$target" @agent_pane_context_tab_project "$project" \; \
 					set-option -pq -t "$target" @agent_pane_context_specific '1'
 			fi
 			;;
 		clear)
-			tmux set-option -pq -t "$target" @agent_pane_context_override ''
+			tmux set-option -pq -t "$target" @agent_pane_context_override '' \; \
+				set-option -pq -t "$target" @agent_pane_context_slug ''
 			if [ "$(get_pane_option @agent_pane_context_active)" = "1" ]; then
 				context_details="$(derive_project_details "$context_path")"
 				inferred_project="$(printf '%s\n' "$context_details" | sed -n '1p')"
 				inferred_specific="$(printf '%s\n' "$context_details" | sed -n '2p')"
+				inferred_tab_project="$(printf '%s\n' "$context_details" | sed -n '3p')"
 				tmux set-option -pq -t "$target" @agent_pane_context_project "$inferred_project" \; \
+					set-option -pq -t "$target" @agent_pane_context_tab_project "$inferred_tab_project" \; \
 					set-option -pq -t "$target" @agent_pane_context_specific "$inferred_specific"
 			fi
 			;;
@@ -735,6 +786,7 @@ set_turn_stop() {
 
 	tmux set-option -pq -t "$target" @agent_pane_context_active '' \; \
 		set-option -pq -t "$target" @agent_pane_context_project '' \; \
+		set-option -pq -t "$target" @agent_pane_context_tab_project '' \; \
 		set-option -pq -t "$target" @agent_pane_context_specific '' \; \
 		set-option -pq -t "$target" @agent_pane_activity '' \; \
 		set-option -pq -t "$target" @agent_pane_context_updated_at ''
@@ -759,6 +811,7 @@ set_turn_done() {
 		set-option -pq -t "$target" @agent_pane_attention_updated_at "$updated_at" \; \
 		set-option -pq -t "$target" @agent_pane_context_active '' \; \
 		set-option -pq -t "$target" @agent_pane_context_project '' \; \
+		set-option -pq -t "$target" @agent_pane_context_tab_project '' \; \
 		set-option -pq -t "$target" @agent_pane_context_specific '' \; \
 		set-option -pq -t "$target" @agent_pane_activity '' \; \
 		set-option -pq -t "$target" @agent_pane_context_updated_at ''
@@ -800,6 +853,7 @@ print_get() {
 	owner_value="$(get_pane_option @agent_pane_owner)"
 	verified_value="$(get_pane_option @agent_pane_attention_verified)"
 	project_override_value="$(get_pane_option @agent_pane_context_override)"
+	project_slug_value="$(get_pane_option @agent_pane_context_slug)"
 
 	case "$format" in
 		text)
@@ -824,6 +878,8 @@ print_get() {
 			json_value "$owner_value"
 			printf ',"project_override":'
 			json_value "$project_override_value"
+			printf ',"project_slug":'
+			json_value "$project_slug_value"
 			printf ',"verified":'
 			if [ "$verified_value" = "1" ]; then
 				printf 'true'
@@ -904,6 +960,7 @@ reason=""
 event_type=""
 activity_value=""
 project=""
+project_slug=""
 project_action=""
 owner="${TMUX_ATTENTION_OWNER:-}"
 write_verified=""
@@ -1009,6 +1066,24 @@ while [ "$#" -gt 0 ]; do
 			project="${1#--project=}"
 			shift
 			;;
+		--slug)
+			if [ "$#" -lt 2 ]; then
+				printf 'tmux-attention: --slug requires a value\n' >&2
+				usage >&2
+				exit 2
+			fi
+			project_slug="$2"
+			shift 2
+			;;
+		--slug=*)
+			project_slug="${1#--slug=}"
+			if [ -z "$project_slug" ]; then
+				printf 'tmux-attention: --slug requires a value\n' >&2
+				usage >&2
+				exit 2
+			fi
+			shift
+			;;
 		--probe)
 			case "$state" in
 				doctor|check)
@@ -1094,6 +1169,20 @@ case "$project" in
 		;;
 esac
 
+case "$project_slug" in
+	*"$_tab_char"*|*"$_nl_char"*)
+		printf 'tmux-attention: --slug must not contain tabs or newlines\n' >&2
+		usage >&2
+		exit 2
+		;;
+esac
+
+if [ -n "$project_slug" ] && [ -z "$project" ]; then
+	printf 'tmux-attention: --slug requires --project or project set <project>\n' >&2
+	usage >&2
+	exit 2
+fi
+
 case "$format" in
 	text|json)
 		;;
@@ -1133,8 +1222,8 @@ case "$state" in
 				fi
 				;;
 			clear)
-				if [ -n "$project" ]; then
-					printf 'tmux-attention: project clear does not accept a project label\n' >&2
+				if [ -n "$project" ] || [ -n "$project_slug" ]; then
+					printf 'tmux-attention: project clear does not accept a project label or slug\n' >&2
 					usage >&2
 					exit 2
 				fi

@@ -42,6 +42,7 @@ set_default_option "@tmux_attention_tab_icon" "#{?#{==:#{@agent_attention},input
 # @tmux_attention_show_activity to "on" if the extra detail is worth that to you.
 set_default_option "@tmux_attention_show_activity" "off"
 set_default_option "@tmux_attention_activity_suffix" "#{?#{&&:#{==:#{@tmux_attention_show_activity},on},#{!=:#{@agent_context_activity},}}, #{@agent_context_activity},}"
+set_default_option "@tmux_attention_project_separator" " · "
 
 set_default_option "@tmux_attention_context" "#{?#{==:#{@agent_context_active},1},#{@agent_context_project}#{E:@tmux_attention_activity_suffix},#{?#{!=:#{@agent_context_idle_project},},#{@agent_context_idle_project},#{b:pane_current_path}}}"
 
@@ -49,17 +50,19 @@ set_default_option "@tmux_attention_context" "#{?#{==:#{@agent_context_active},1
 # directory, since that is what a tab shows by default. Pair it with
 # @tmux_attention_tab_icon in window-status-format. Intermediate formats keep the policy
 # readable and let custom themes reuse the context/specificity separately.
-set_default_option "@tmux_attention_tab_context" "#{?#{==:#{@agent_context_active},1},#{@agent_context_project}#{E:@tmux_attention_activity_suffix},#{?#{!=:#{@agent_context_idle_project},},#{@agent_context_idle_project},#{window_name}}}"
+set_default_option "@tmux_attention_tab_context" "#{?#{==:#{@agent_context_active},1},#{?#{!=:#{@agent_context_tab_project},},#{@agent_context_tab_project},#{@agent_context_project}},#{?#{!=:#{@agent_context_idle_tab_project},},#{@agent_context_idle_tab_project},#{?#{!=:#{@agent_context_idle_project},},#{@agent_context_idle_project},#{window_name}}}}"
 set_default_option "@tmux_attention_tab_specific" "#{?#{==:#{@agent_context_active},1},#{@agent_context_specific},#{@agent_context_idle_specific}}"
 set_default_option "@tmux_attention_tab_mode" "preserve"
 set_default_option "@tmux_attention_tab_separator" " · "
 #
 # Automatic names always become context. Deliberate names use one of three modes:
 # preserve (default) keeps the chosen name; smart appends context only when it is an
-# explicit override, Jira key, or linked worktree; context replaces even chosen names.
+# explicit override, Jira key, or linked worktree; compact replaces a chosen name with
+# that short, meaningful context; context replaces every chosen name.
 # This avoids turning distinct tabs into repeated repo names while still allowing an
-# agent window to read "codex · FLYWL-2533" when the context is genuinely specific.
-set_default_option "@tmux_attention_tab_label" "#{?automatic-rename,#{E:@tmux_attention_tab_context},#{?#{==:#{@tmux_attention_tab_mode},context},#{E:@tmux_attention_tab_context},#{?#{&&:#{==:#{@tmux_attention_tab_mode},smart},#{==:#{E:@tmux_attention_tab_specific},1}},#{?#{==:#{window_name},#{E:@tmux_attention_tab_context}},#{window_name},#{window_name}#{E:@tmux_attention_tab_separator}#{E:@tmux_attention_tab_context}},#{window_name}}}}"
+# agent window to read "codex · FLYWL-2533" in smart mode or just "FLYWL-2533"
+# in compact mode when the context is genuinely specific.
+set_default_option "@tmux_attention_tab_label" "#{?automatic-rename,#{E:@tmux_attention_tab_context},#{?#{==:#{@tmux_attention_tab_mode},context},#{E:@tmux_attention_tab_context},#{?#{&&:#{==:#{@tmux_attention_tab_mode},compact},#{==:#{E:@tmux_attention_tab_specific},1}},#{E:@tmux_attention_tab_context},#{?#{&&:#{==:#{@tmux_attention_tab_mode},smart},#{==:#{E:@tmux_attention_tab_specific},1}},#{?#{==:#{window_name},#{E:@tmux_attention_tab_context}},#{window_name},#{window_name}#{E:@tmux_attention_tab_separator}#{E:@tmux_attention_tab_context}},#{window_name}}}}}"
 
 # Re-clear the marker shortly after its pane is actually viewed. Cover every
 # way a pane becomes visible: selecting its window (after-select-window), attaching a

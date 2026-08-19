@@ -95,7 +95,7 @@ set -g @tmux_attention_icon_done ""
 set -g @tmux_attention_icon_working "󰚩"
 set -g @tmux_attention_clear_delay "8"
 set -g @tmux_attention_clear_on_view "on"
-set -g @tmux_attention_tab_mode "preserve" # preserve, smart, or context
+set -g @tmux_attention_tab_mode "preserve" # preserve, smart, compact, or context
 set -g @tmux_attention_tab_separator " · "
 
 set -g @plugin 'cengebretson/tmux-attention'
@@ -148,7 +148,7 @@ tmux-attention turn-start --project FLYWL-2533
 tmux-attention turn-active
 tmux-attention turn-stop
 tmux-attention turn-done
-tmux-attention project set FLYWL-2533
+tmux-attention project set FLYWL-2533 --slug borrower-dashboard
 tmux-attention project clear
 tmux-attention status-format
 tmux-attention catppuccin-format
@@ -324,6 +324,7 @@ window you named deliberately, `@tmux_attention_tab_mode` controls the policy:
 |------|----------------------------|
 | `preserve` (default) | Keep `riskos`. Context remains available in the status bar. |
 | `smart` | Append only an explicit project, Jira key, or linked-worktree label: `codex · FLYWL-2533`. Generic repo/directory fallbacks stay out of the tab. |
+| `compact` | Replace a deliberate agent name with only the short, meaningful project: `FLYWL-2533`. Generic repo/directory fallbacks preserve the chosen name. |
 | `context` | Replace the chosen name with the current context too. |
 
 Customize the smart-mode joiner with `@tmux_attention_tab_separator` (default
@@ -378,12 +379,14 @@ For an agent that learns the Jira ticket from the conversation rather than the
 branch, declare it once:
 
 ```sh
-tmux-attention project set FLYWL-2533
+tmux-attention project set FLYWL-2533 --slug borrower-dashboard
 tmux-attention project clear
 ```
 
-The declared project survives `turn-stop` and `turn-done`, remains visible while
-idle, and is reused by future `turn-start`/`turn-active` calls. `project clear`
+The declared project and optional slug survive `turn-stop` and `turn-done`, remain
+visible while idle, and are reused by future `turn-start`/`turn-active` calls. The
+right-side context renders `FLYWL-2533 · borrower-dashboard`, while tabs retain the
+short project key. `project clear`
 returns to automatic inference. `claim` and `disown` clear it so a new agent in a
 recycled pane cannot inherit the previous agent's ticket. `turn-start --project`
 remains a one-turn override and does not replace the persistent declaration.
@@ -392,9 +395,10 @@ An agent behavior file can drive this semantic layer without teaching hooks to
 guess from arbitrary prompt text:
 
 ```text
-When working inside tmux on a Jira ticket, run `tmux-attention project set <KEY>`
-after identifying the active ticket. Update it when switching tickets and clear
-it when the pane no longer belongs to a ticket.
+When working inside tmux on a Jira ticket, run
+`tmux-attention project set <KEY> --slug <short-kebab-case-summary>` after
+identifying the active ticket. Update it when switching tickets and clear it when
+the pane no longer belongs to a ticket.
 ```
 
 The authoritative context pane options are:
@@ -403,15 +407,17 @@ The authoritative context pane options are:
 |--------|---------|
 | `@agent_pane_context_active` | `1` while this pane's agent turn is running |
 | `@agent_pane_context_project` | derived or supplied project label |
+| `@agent_pane_context_tab_project` | short project label used by window tabs |
 | `@agent_pane_context_override` | persistent project supplied by `project set` |
+| `@agent_pane_context_slug` | optional persistent description supplied by `--slug` |
 | `@agent_pane_context_specific` | `1` when the active label is suitable for smart tabs |
 | `@agent_pane_context_updated_at` | Unix timestamp for this pane's latest turn start |
 
 The derived `@agent_context_active`, `@agent_context_project`,
-`@agent_context_pane`, `@agent_context_specific`, and
+`@agent_context_tab_project`, `@agent_context_pane`, `@agent_context_specific`, and
 `@agent_context_updated_at` window options preserve the existing status-format
-contract. `@agent_context_idle_project` and `@agent_context_idle_specific` carry
-the idle label and its smart-tab suitability.
+contract. `@agent_context_idle_project`, `@agent_context_idle_tab_project`, and
+`@agent_context_idle_specific` carry the idle labels and their tab suitability.
 
 `turn-stop` clears only active-turn context. `turn-done` performs the normal
 completed-response transition: it clears that context and sets the pane's
