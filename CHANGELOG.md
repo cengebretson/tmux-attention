@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-08-19
+
 ### Added
 
 - Add `project set <label>` / `project clear` for pane-local semantic context
@@ -360,7 +362,8 @@ who can run tmux can set the option too.
   server and a GitHub Actions CI workflow running ShellCheck and the tests.
 - Documentation: `README.md` and `docs/hooks.md`.
 
-[Unreleased]: https://github.com/cengebretson/tmux-attention/compare/v0.9.1...HEAD
+[Unreleased]: https://github.com/cengebretson/tmux-attention/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/cengebretson/tmux-attention/compare/v0.9.1...v0.10.0
 [0.9.1]: https://github.com/cengebretson/tmux-attention/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/cengebretson/tmux-attention/compare/v0.8.1...v0.9.0
 [0.8.1]: https://github.com/cengebretson/tmux-attention/compare/v0.8.0...v0.8.1
