@@ -113,6 +113,8 @@ assert_contains "@tmux_attention_icon_working" "$tab_icon" "tab icon uses config
 context_status="$(tmux_test show-option -gqv @tmux_attention_context)"
 assert_contains "@agent_context_active" "$context_status" "context format reads active agent state"
 assert_contains "pane_current_path" "$context_status" "context format falls back to pane current path"
+assert_eq "preserve" "$(tmux_test show-option -gqv @tmux_attention_tab_mode)" "tab mode preserves deliberate names by default"
+assert_contains "@tmux_attention_tab_specific" "$(tmux_test show-option -gqv @tmux_attention_tab_label)" "tab label supports specific smart context"
 
 assert_contains "after-select-window[90]" "$(tmux_test show-hook -g after-select-window)" "after-select-window hook is installed at stable index"
 assert_contains "client-attached[90]" "$(tmux_test show-hook -g client-attached)" "client-attached hook is installed at stable index"
@@ -233,6 +235,23 @@ assert_eq "FLYWL-4242" "$(tmux_test show-window-option -t "$idle_pane" -v @agent
 assert_eq "FLYWL-4242" "$(tmux_test display-message -p -t "$idle_pane" '#{E:@tmux_attention_context}')" "context format renders the idle ticket with no active turn"
 assert_eq "FLYWL-4242" "$(tmux_test display-message -p -t "$idle_pane" '#{E:@tmux_attention_tab_label}')" "tab label renders the idle ticket"
 
+# An agent can publish semantic task context once and keep it across turns. This is
+# intentionally separate from turn-start --project, which remains a one-turn override.
+"$ROOT_DIR/scripts/tmux-attention" project set AGENT-77 --target "$idle_pane"
+assert_eq "AGENT-77" "$(tmux_test show-options -pqv -t "$idle_pane" @agent_pane_context_override)" "project set stores a pane-local override"
+assert_eq "AGENT-77" "$(tmux_test show-window-option -t "$idle_pane" -v @agent_context_idle_project)" "project override replaces the idle label"
+assert_eq "1" "$(tmux_test show-window-option -t "$idle_pane" -v @agent_context_idle_specific)" "project override is meaningful smart-tab context"
+
+"$ROOT_DIR/scripts/tmux-attention" turn-start --target "$idle_pane"
+assert_eq "AGENT-77" "$(tmux_test show-window-option -t "$idle_pane" -v @agent_context_project)" "turn-start reuses the persistent project override"
+"$ROOT_DIR/scripts/tmux-attention" turn-done --target "$idle_pane"
+assert_eq "AGENT-77" "$(tmux_test show-options -pqv -t "$idle_pane" @agent_pane_context_override)" "turn-done preserves the project override"
+assert_eq "AGENT-77" "$(tmux_test display-message -p -t "$idle_pane" '#{E:@tmux_attention_context}')" "completed turn keeps the declared project visible"
+
+"$ROOT_DIR/scripts/tmux-attention" project clear --target "$idle_pane"
+assert_eq "" "$(tmux_test show-options -pqv -t "$idle_pane" @agent_pane_context_override)" "project clear removes the pane-local override"
+assert_eq "FLYWL-4242" "$(tmux_test show-window-option -t "$idle_pane" -v @agent_context_idle_project)" "project clear restores automatic ticket inference"
+
 # Activity layer: a verb rides alongside the project without replacing it, and is opt-in.
 "$ROOT_DIR/scripts/tmux-attention" turn-start --target "$idle_pane" --project ACT-1
 "$ROOT_DIR/scripts/tmux-attention" activity --target "$idle_pane" rebasing
@@ -319,16 +338,28 @@ assert_eq "FLYWL-4242" "$(tmux_test show-window-option -t "$named_pane" -v @agen
 assert_eq "riskos" "$(tmux_test display-message -p -t "$named_pane" '#{E:@tmux_attention_tab_label}')" "tab label keeps a deliberately chosen window name"
 assert_eq "FLYWL-4242" "$(tmux_test display-message -p -t "$named_pane" '#{E:@tmux_attention_context}')" "context still shows the ticket for a deliberately named window"
 
-# An active agent turn does not override a deliberate name either, so the rule is one rule.
+tmux_test set-option -g @tmux_attention_tab_mode "smart"
+assert_eq "riskos · FLYWL-4242" "$(tmux_test display-message -p -t "$named_pane" '#{E:@tmux_attention_tab_label}')" "smart tab mode appends meaningful ticket context"
+
+# An active explicit project is also meaningful smart context.
 "$ROOT_DIR/scripts/tmux-attention" turn-start --target "$named_pane" --project TURN-9
-assert_eq "riskos" "$(tmux_test display-message -p -t "$named_pane" '#{E:@tmux_attention_tab_label}')" "an active turn does not override a deliberate name"
+assert_eq "riskos · TURN-9" "$(tmux_test display-message -p -t "$named_pane" '#{E:@tmux_attention_tab_label}')" "smart tab mode appends an explicit active project"
 assert_eq "TURN-9" "$(tmux_test display-message -p -t "$named_pane" '#{E:@tmux_attention_context}')" "context still shows the active project for a named window"
 "$ROOT_DIR/scripts/tmux-attention" turn-stop --target "$named_pane"
+
+tmux_test set-option -g @tmux_attention_tab_mode "context"
+assert_eq "FLYWL-4242" "$(tmux_test display-message -p -t "$named_pane" '#{E:@tmux_attention_tab_label}')" "context tab mode replaces a deliberate name"
+tmux_test set-option -g @tmux_attention_tab_mode "preserve"
+assert_eq "riskos" "$(tmux_test display-message -p -t "$named_pane" '#{E:@tmux_attention_tab_label}')" "preserve tab mode restores the deliberate name"
 
 # Tab label falls back to the window name, not a directory, when nothing better exists.
 plain_pane="$(tmux_test new-window -d -P -F '#{pane_id}' -n plainwin -c "$TMP_BIN")"
 tmux_test set-window-option -t "$plain_pane" @agent_context_idle_project ""
 assert_eq "plainwin" "$(tmux_test display-message -p -t "$plain_pane" '#{E:@tmux_attention_tab_label}')" "tab label falls back to the window name"
+tmux_test set-option -g @tmux_attention_tab_mode "smart"
+"$ROOT_DIR/scripts/tmux-attention" refresh --target "$plain_pane"
+assert_eq "plainwin" "$(tmux_test display-message -p -t "$plain_pane" '#{E:@tmux_attention_tab_label}')" "smart tab mode does not append a generic directory"
+tmux_test set-option -g @tmux_attention_tab_mode "preserve"
 
 "$ROOT_DIR/scripts/tmux-attention" clear --target "$other_pane"
 "$ROOT_DIR/scripts/tmux-attention" turn-start --target "$target_pane" --project RESPONSE-READY
@@ -372,6 +403,12 @@ assert_contains '"state":"blocked"' "$target_json" "CLI JSON get includes state"
 assert_contains '"source":"moshi"' "$target_json" "CLI JSON get includes source metadata"
 assert_contains '"reason":"approval_required"' "$target_json" "CLI JSON get includes reason metadata"
 assert_contains '"updated_at":"' "$target_json" "CLI JSON get includes updated_at metadata"
+assert_contains '"project_override":null' "$target_json" "CLI JSON get reports an empty project override"
+
+"$ROOT_DIR/scripts/tmux-attention" project set JSON-88 --target "$target_pane"
+project_json="$("$ROOT_DIR/scripts/tmux-attention" get --target "$target_pane" --format json)"
+assert_contains '"project_override":"JSON-88"' "$project_json" "CLI JSON get includes the project override"
+"$ROOT_DIR/scripts/tmux-attention" project clear --target "$target_pane"
 
 list_text="$("$ROOT_DIR/scripts/tmux-attention" list --session tmux-attention-test)"
 assert_contains " blocked" "$list_text" "CLI list includes marked windows"
@@ -400,7 +437,7 @@ assert_contains "window-status-format" "$("$ROOT_DIR/scripts/tmux-attention" sta
 assert_contains "@catppuccin_window_text" "$("$ROOT_DIR/scripts/tmux-attention" catppuccin-format)" "CLI prints Catppuccin status format"
 assert_contains "@tmux_attention_context" "$("$ROOT_DIR/scripts/tmux-attention" context-format)" "CLI prints agent context format"
 
-tmux_test set-option -gq window-status-format "#{E:@tmux_attention_status}#I:#W"
+tmux_test set-option -gq window-status-format "#{E:@tmux_attention_tab_icon} #{E:@tmux_attention_tab_label}"
 doctor_output="$(
 	TMUX_PANE="$pane" \
 	TMUX_ATTENTION_CLAUDE_SETTINGS="$TMP_BIN/doctor-claude.json" \
@@ -412,6 +449,35 @@ assert_contains "ok - plugin status option is loaded" "$doctor_output" "doctor c
 assert_contains "ok - tmux status line includes tmux-attention" "$doctor_output" "doctor checks status-line wiring"
 assert_contains "python3" "$doctor_output" "doctor reports python3 availability"
 assert_contains "codex: not installed" "$doctor_output" "doctor reports hook status"
+
+# Machine-local dispatcher hooks are valid integrations even though install-hooks does not
+# own their JSON entries. Doctor should recognize the active mapping instead of telling the
+# user to install a duplicate direct hook stack.
+DOCTOR_CLAUDE="$TMP_BIN/dispatcher-claude/settings.json"
+DOCTOR_CODEX="$TMP_BIN/dispatcher-codex/hooks.json"
+mkdir -p "${DOCTOR_CLAUDE%/*}/hooks/handlers" "${DOCTOR_CODEX%.json}/handlers"
+cat >"$DOCTOR_CLAUDE" <<'EOF'
+{"hooks":{"UserPromptSubmit":[{"command":"dispatch.sh prompt-clear"}],"Stop":[{"command":"dispatch.sh agent-turn-stop"}]}}
+EOF
+cat >"$DOCTOR_CODEX" <<'EOF'
+{"hooks":{"UserPromptSubmit":[{"command":"dispatch.sh prompt-clear"}],"PreToolUse":[{"command":"dispatch.sh agent-turn-active"}],"Stop":[{"command":"dispatch.sh agent-turn-stop"}]}}
+EOF
+for handler_dir in "${DOCTOR_CLAUDE%/*}/hooks/handlers" "${DOCTOR_CODEX%.json}/handlers"; do
+	printf '#!/bin/sh\ntmux-attention turn-start\n' >"$handler_dir/prompt-clear"
+	printf '#!/bin/sh\ntmux-attention turn-done\n' >"$handler_dir/agent-turn-stop"
+	chmod +x "$handler_dir/prompt-clear" "$handler_dir/agent-turn-stop"
+done
+printf '#!/bin/sh\ntmux-attention turn-active\n' >"${DOCTOR_CODEX%.json}/handlers/agent-turn-active"
+chmod +x "${DOCTOR_CODEX%.json}/handlers/agent-turn-active"
+
+dispatcher_doctor_output="$(
+	TMUX_PANE="$pane" \
+	TMUX_ATTENTION_CLAUDE_SETTINGS="$DOCTOR_CLAUDE" \
+	TMUX_ATTENTION_CODEX_HOOKS="$DOCTOR_CODEX" \
+		"$ROOT_DIR/scripts/tmux-attention" doctor
+)"
+assert_contains "ok - claude hooks installed through dispatcher" "$dispatcher_doctor_output" "doctor recognizes Claude dispatcher hooks"
+assert_contains "ok - codex hooks installed through dispatcher" "$dispatcher_doctor_output" "doctor recognizes Codex dispatcher hooks"
 
 doctor_probe_output="$(
 	TMUX_PANE="$pane" \
@@ -784,9 +850,11 @@ owner_pane="$(tmux_test new-window -P -F '#{pane_id}')"
 assert_eq "blocked" "$(tmux_test show-options -pqv -t "$owner_pane" @agent_pane_attention)" "unowned pane still accepts writes"
 assert_eq "" "$(tmux_test show-options -pqv -t "$owner_pane" @agent_pane_attention_verified)" "a write with no owner is recorded unverified"
 
+"$ROOT_DIR/scripts/tmux-attention" project set OLD-1 --target "$owner_pane"
 "$ROOT_DIR/scripts/tmux-attention" claim --owner agent-1 --target "$owner_pane"
 assert_eq "agent-1" "$(tmux_test show-options -pqv -t "$owner_pane" @agent_pane_owner)" "claim stamps the pane owner"
 assert_eq "" "$(tmux_test show-options -pqv -t "$owner_pane" @agent_pane_attention)" "claim clears the marker the pane inherited"
+assert_eq "" "$(tmux_test show-options -pqv -t "$owner_pane" @agent_pane_context_override)" "claim clears an inherited project override"
 
 "$ROOT_DIR/scripts/tmux-attention" blocked --target "$owner_pane" --owner agent-1 --source claude
 assert_eq "blocked" "$(tmux_test show-options -pqv -t "$owner_pane" @agent_pane_attention)" "matching owner may write"
@@ -804,10 +872,12 @@ assert_eq "review" "$(tmux_test show-options -pqv -t "$owner_pane" @agent_pane_a
 "$ROOT_DIR/scripts/tmux-attention" clear --target "$owner_pane"
 assert_eq "" "$(tmux_test show-options -pqv -t "$owner_pane" @agent_pane_attention)" "a caller with no owner may still clear an owned pane"
 
+"$ROOT_DIR/scripts/tmux-attention" project set OWNED-1 --target "$owner_pane"
 "$ROOT_DIR/scripts/tmux-attention" input --target "$owner_pane" --owner agent-1
 "$ROOT_DIR/scripts/tmux-attention" disown --target "$owner_pane"
 assert_eq "" "$(tmux_test show-options -pqv -t "$owner_pane" @agent_pane_owner)" "disown removes the stamp"
 assert_eq "" "$(tmux_test show-options -pqv -t "$owner_pane" @agent_pane_attention_verified)" "verified cannot outlive the owner that granted it"
+assert_eq "" "$(tmux_test show-options -pqv -t "$owner_pane" @agent_pane_context_override)" "disown clears the project override"
 
 "$ROOT_DIR/scripts/tmux-attention" claim --owner agent-9 --target "$owner_pane"
 "$ROOT_DIR/scripts/tmux-attention" input --target "$owner_pane" --owner agent-9
@@ -866,6 +936,14 @@ assert_eq "$("$ROOT_DIR/scripts/tmux-attention" version)" "$("$LINK_TMP/second-h
 	"version resolves through a chain of symlinks"
 assert_contains "$ROOT_DIR/scripts/tmux-attention" "$("$LINK_TMP/tmux-attention" shell-init fish)" \
 	"shell-init emits the real script path, not the symlink"
+symlink_doctor_output="$(
+	TMUX_PANE="$pane" \
+	TMUX_ATTENTION_CLAUDE_SETTINGS="$TMP_BIN/symlink-doctor-claude.json" \
+	TMUX_ATTENTION_CODEX_HOOKS="$TMP_BIN/symlink-doctor-codex.json" \
+		"$LINK_TMP/tmux-attention" doctor
+)"
+assert_not_contains "install-hooks helper is missing" "$symlink_doctor_output" \
+	"doctor resolves its helper directory through a symlink"
 rm -rf "$LINK_TMP"
 
 shell_rc=0

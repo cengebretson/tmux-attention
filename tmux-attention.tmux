@@ -47,16 +47,19 @@ set_default_option "@tmux_attention_context" "#{?#{==:#{@agent_context_active},1
 
 # Same resolution for window tabs, but falling back to the window name rather than a
 # directory, since that is what a tab shows by default. Pair it with
-# @tmux_attention_tab_icon in window-status-format.
+# @tmux_attention_tab_icon in window-status-format. Intermediate formats keep the policy
+# readable and let custom themes reuse the context/specificity separately.
+set_default_option "@tmux_attention_tab_context" "#{?#{==:#{@agent_context_active},1},#{@agent_context_project}#{E:@tmux_attention_activity_suffix},#{?#{!=:#{@agent_context_idle_project},},#{@agent_context_idle_project},#{window_name}}}"
+set_default_option "@tmux_attention_tab_specific" "#{?#{==:#{@agent_context_active},1},#{@agent_context_specific},#{@agent_context_idle_specific}}"
+set_default_option "@tmux_attention_tab_mode" "preserve"
+set_default_option "@tmux_attention_tab_separator" " · "
 #
-# Gated on `automatic-rename`, which is how tmux records whether a window name means
-# anything: it is off for a window someone renamed and on while tmux derives the name
-# from the running process. A derived label is an improvement over "fish" but a
-# regression over "riskos", and windows that share a checkout all derive the SAME
-# label, so overriding deliberate names replaced distinct tabs with one repeated
-# string. A name you set is therefore never overwritten; the live context still shows
-# in @tmux_attention_context. Turn automatic-rename back on for a window to opt it in.
-set_default_option "@tmux_attention_tab_label" "#{?automatic-rename,#{?#{==:#{@agent_context_active},1},#{@agent_context_project}#{E:@tmux_attention_activity_suffix},#{?#{!=:#{@agent_context_idle_project},},#{@agent_context_idle_project},#{window_name}}},#{window_name}}"
+# Automatic names always become context. Deliberate names use one of three modes:
+# preserve (default) keeps the chosen name; smart appends context only when it is an
+# explicit override, Jira key, or linked worktree; context replaces even chosen names.
+# This avoids turning distinct tabs into repeated repo names while still allowing an
+# agent window to read "codex · FLYWL-2533" when the context is genuinely specific.
+set_default_option "@tmux_attention_tab_label" "#{?automatic-rename,#{E:@tmux_attention_tab_context},#{?#{==:#{@tmux_attention_tab_mode},context},#{E:@tmux_attention_tab_context},#{?#{&&:#{==:#{@tmux_attention_tab_mode},smart},#{==:#{E:@tmux_attention_tab_specific},1}},#{?#{==:#{window_name},#{E:@tmux_attention_tab_context}},#{window_name},#{window_name}#{E:@tmux_attention_tab_separator}#{E:@tmux_attention_tab_context}},#{window_name}}}}"
 
 # Re-clear the marker shortly after its pane is actually viewed. Cover every
 # way a pane becomes visible: selecting its window (after-select-window), attaching a

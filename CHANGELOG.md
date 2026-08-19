@@ -6,6 +6,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Add `project set <label>` / `project clear` for pane-local semantic context
+  that survives turn boundaries, letting an agent publish a Jira key learned
+  from the conversation when Git cannot supply it.
+- Add `@tmux_attention_tab_mode=smart`, which appends explicit, Jira, or linked
+  worktree context to a deliberately named window without appending generic
+  repository/directory fallbacks. `preserve` remains the default and `context`
+  provides full replacement.
+
+### Fixed
+
+- Make `doctor` recognize tab-icon/context status integrations and the
+  dispatcher-based Claude/Codex hook layout instead of reporting both as
+  missing when direct installer-managed entries are absent.
+- Resolve doctor and delayed-clear helpers beside the real CLI after a PATH
+  symlink, matching the existing version and shell-integration behavior.
+
 ## [0.9.1] - 2026-08-18
 
 ### Fixed

@@ -13,8 +13,9 @@ See `README.md` for what the plugin does, its parts (TPM plugin, CLI, agent hook
   each hook in place).
 - `scripts/tmux-attention` — POSIX-sh CLI: sets/clears authoritative
   `@agent_pane_attention` state (`input`, `blocked`, `review`, `done`), derives
-  backward-compatible window summaries, maps agent event names to states,
-  `get`/`list` in text or JSON, prints status snippets, `doctor [--probe]`, `version`.
+  backward-compatible window summaries, persists agent-declared project labels
+  with `project set`/`project clear`, maps agent event names to states, `get`/`list`
+  in text or JSON, prints status snippets, `doctor [--probe]`, `version`.
 - `scripts/clear-after-delay` — schedules the delayed marker clear. No-ops when the
   pane has no marker or `@tmux_attention_clear_on_view` is off; compares
   `@agent_pane_attention_updated_at` so a marker re-set during the delay survives;

@@ -47,6 +47,11 @@ Check what is installed:
 ~/.config/tmux/plugins/tmux-attention/scripts/install-hooks --status all
 ```
 
+`install-hooks --status` reports only entries managed directly by this installer.
+If a machine routes hooks through a dispatcher, use `tmux-attention doctor`;
+doctor recognizes dispatcher mappings whose handlers invoke `turn-start`,
+`turn-active`, and `turn-done` without encouraging a duplicate direct install.
+
 Uninstall only `tmux-attention` managed hook entries:
 
 ```sh
@@ -118,10 +123,11 @@ automatic goal continuations. The next `PreToolUse` calls the idempotent
 `turn-active` transition, restoring working context and clearing the premature
 completion marker without rewriting state on every tool call.
 
-The `turn-start` hooks derive a project label from the pane's Git branch,
-repository, or current directory. Include `#{E:@tmux_attention_context}` in a
-status module to render the project during a turn and the pane's current
-directory when no agent is running.
+The `turn-start` hooks first reuse a pane project declared with
+`tmux-attention project set <label>`, then derive a label from the pane's Git
+branch, repository, or current directory. Include
+`#{E:@tmux_attention_context}` in a status module to render the project during a
+turn and keep the declared or derived label visible when no agent is running.
 
 ## Custom Paths
 

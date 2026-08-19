@@ -34,6 +34,8 @@ Usage: tmux-attention [input|blocked|review|done|clear] [--target <tmux-target>]
        tmux-attention turn-stop [--target <tmux-target>]
        tmux-attention turn-done [--target <tmux-target>]
                                 [--source <source>] [--reason <reason>]
+       tmux-attention project set <project> [--target <tmux-target>]
+       tmux-attention project clear [--target <tmux-target>]
        tmux-attention refresh [--target <tmux-target>]
        tmux-attention claim --owner <id> [--target <tmux-target>]
        tmux-attention disown [--target <tmux-target>]
@@ -71,6 +73,12 @@ done attention marker. Its default source is turn and its default reason is
 response_ready. Use it when an agent Stop event means a completed response is
 ready for the user, rather than that an entire project or conversation ended.
 
+project set stores a pane-local project override that survives turn boundaries.
+Future turn-start/turn-active calls use it before Git branch, repository, or
+directory inference, and the idle status label keeps showing it between turns.
+project clear returns the pane to automatic inference. Pane claim/disown also
+clear the override so a recycled pane cannot inherit another agent's ticket.
+
 claim stamps a pane with an owner id and clears any marker it inherited, so a
 new agent never starts wearing the previous occupant's state. A launcher runs it
 and gives the agent the same id, via --owner or TMUX_ATTENTION_OWNER. A write
@@ -101,7 +109,7 @@ EOF
 
 doctor() {
 	probe="${1:-}"
-	script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+	script_dir="$TMUX_ATTENTION_DIR"
 
 	check_ok() {
 		printf 'ok - %s\n' "$1"
@@ -143,7 +151,7 @@ doctor() {
 		}
 	)"
 	case "$configured_status" in
-		*"@tmux_attention_status"*)
+		*"@tmux_attention_status"*|*"@tmux_attention_tab_icon"*|*"@tmux_attention_context"*)
 			check_ok "tmux status line includes tmux-attention"
 			;;
 		*)
@@ -157,10 +165,53 @@ doctor() {
 		check_warn "python3 is not available (hook install/status needs it)"
 	fi
 
+	dispatcher_hooks_active() {
+		integration="$1"
+		config_path="$2"
+		config_dir="${config_path%/*}"
+		handler_dir="$config_dir/hooks/handlers"
+
+		[ -f "$config_path" ] || return 1
+		grep -q 'dispatch\.sh' "$config_path" 2>/dev/null || return 1
+		grep -q 'prompt-clear' "$config_path" 2>/dev/null || return 1
+		grep -q 'agent-turn-stop' "$config_path" 2>/dev/null || return 1
+		[ -x "$handler_dir/prompt-clear" ] || return 1
+		[ -x "$handler_dir/agent-turn-stop" ] || return 1
+		grep -q 'turn-start' "$handler_dir/prompt-clear" 2>/dev/null || return 1
+		grep -q 'turn-done' "$handler_dir/agent-turn-stop" 2>/dev/null || return 1
+
+		if [ "$integration" = "codex" ]; then
+			grep -q 'agent-turn-active' "$config_path" 2>/dev/null || return 1
+			[ -x "$handler_dir/agent-turn-active" ] || return 1
+			grep -q 'turn-active' "$handler_dir/agent-turn-active" 2>/dev/null || return 1
+		fi
+	}
+
 	if [ ! -x "$script_dir/install-hooks" ]; then
 		check_warn "install-hooks helper is missing"
 	elif command -v python3 >/dev/null 2>&1; then
-		"$script_dir/install-hooks" --status all
+		claude_settings="${TMUX_ATTENTION_CLAUDE_SETTINGS:-$HOME/.claude/settings.json}"
+		codex_hooks="${TMUX_ATTENTION_CODEX_HOOKS:-${CODEX_HOME:-$HOME/.codex}/hooks.json}"
+		hook_status="$("$script_dir/install-hooks" --status all)"
+		printf '%s\n' "$hook_status" | while IFS= read -r hook_line; do
+			case "$hook_line" in
+				"claude: not installed"*)
+					if dispatcher_hooks_active claude "$claude_settings"; then
+						check_ok "claude hooks installed through dispatcher"
+					else
+						printf '%s\n' "$hook_line"
+					fi
+					;;
+				"codex: not installed"*)
+					if dispatcher_hooks_active codex "$codex_hooks"; then
+						check_ok "codex hooks installed through dispatcher"
+					else
+						printf '%s\n' "$hook_line"
+					fi
+					;;
+				*) printf '%s\n' "$hook_line" ;;
+			esac
+		done
 	else
 		check_warn "skipping hook status (python3 not available)"
 	fi
@@ -299,7 +350,8 @@ claim_pane() {
 		set-option -pq -t "$target" @agent_pane_attention_source '' \; \
 		set-option -pq -t "$target" @agent_pane_attention_reason '' \; \
 		set-option -pq -t "$target" @agent_pane_attention_updated_at '' \; \
-		set-option -pq -t "$target" @agent_pane_attention_verified ''
+		set-option -pq -t "$target" @agent_pane_attention_verified '' \; \
+		set-option -pq -t "$target" @agent_pane_context_override ''
 	recompute_window_summary
 }
 
@@ -422,7 +474,9 @@ disown_pane() {
 	# outlive the stamp -- a marker claiming verification with nothing to have
 	# verified it against is worse than an unverified one.
 	tmux set-option -pq -t "$target" @agent_pane_owner '' \; \
-		set-option -pq -t "$target" @agent_pane_attention_verified ''
+		set-option -pq -t "$target" @agent_pane_attention_verified '' \; \
+		set-option -pq -t "$target" @agent_pane_context_override ''
+	recompute_window_summary
 }
 
 recompute_window_summary() {
@@ -431,7 +485,7 @@ recompute_window_summary() {
 		return 1
 	}
 	tab="$(printf '\t')"
-	pane_rows="$(tmux list-panes -t "$window_id" -F "#{pane_id}${tab}#{@agent_pane_attention}${tab}#{@agent_pane_attention_source}${tab}#{@agent_pane_attention_reason}${tab}#{@agent_pane_attention_updated_at}${tab}#{@agent_pane_context_active}${tab}#{@agent_pane_context_project}${tab}#{@agent_pane_context_updated_at}${tab}#{@agent_pane_activity}" 2>/dev/null)" || return 1
+	pane_rows="$(tmux list-panes -t "$window_id" -F "#{pane_id}${tab}#{@agent_pane_attention}${tab}#{@agent_pane_attention_source}${tab}#{@agent_pane_attention_reason}${tab}#{@agent_pane_attention_updated_at}${tab}#{@agent_pane_context_active}${tab}#{@agent_pane_context_project}${tab}#{@agent_pane_context_updated_at}${tab}#{@agent_pane_activity}${tab}#{@agent_pane_context_specific}" 2>/dev/null)" || return 1
 
 	attention_row="$(
 		printf '%s\n' "$pane_rows" |
@@ -478,9 +532,10 @@ recompute_window_summary() {
 				best_pane = $1
 				best_updated_at = $8
 				best_activity = $9
+				best_specific = $10
 			}
 			END {
-				if (best_pane != "") printf "%s\n%s\n%s\n%s\n", best_project, best_pane, best_updated_at, best_activity
+				if (best_pane != "") printf "%s\n%s\n%s\n%s\n%s\n", best_project, best_pane, best_updated_at, best_activity, best_specific
 			}'
 	)"
 	context_active=""
@@ -488,24 +543,34 @@ recompute_window_summary() {
 	context_activity=""
 	context_pane=""
 	context_updated_at=""
+	context_specific=""
 	if [ -n "$context_row" ]; then
 		context_active="1"
 		context_project="$(printf '%s\n' "$context_row" | sed -n '1p')"
 		context_pane="$(printf '%s\n' "$context_row" | sed -n '2p')"
 		context_updated_at="$(printf '%s\n' "$context_row" | sed -n '3p')"
 		context_activity="$(printf '%s\n' "$context_row" | sed -n '4p')"
+		context_specific="$(printf '%s\n' "$context_row" | sed -n '5p')"
 	fi
 
 	# Idle label: what to show when no agent turn is active. Derived from the window's
 	# ACTIVE pane rather than the agent pane, because with no turn running the thing the
 	# user is looking at is the active pane. Recomputed on the same hooks as the rest of
 	# this summary, so it tracks branch and directory changes as soon as the window is
-	# focused again. Falls back inside `derive_project` to the repo name, then the
+	# focused again. Falls back inside `derive_project_details` to the repo name, then the
 	# directory name, so it is never empty for a real pane.
-	idle_path="$(tmux display-message -p -t "$window_id" '#{pane_current_path}' 2>/dev/null || printf '')"
+	idle_fields="$(tmux display-message -p -t "$window_id" "#{pane_current_path}${tab}#{@agent_pane_context_override}" 2>/dev/null || printf '')"
+	idle_path="${idle_fields%%"$tab"*}"
+	idle_override="${idle_fields#*"$tab"}"
 	idle_project=""
-	if [ -n "$idle_path" ]; then
-		idle_project="$(derive_project "$idle_path")"
+	idle_specific=""
+	if [ -n "$idle_override" ]; then
+		idle_project="$idle_override"
+		idle_specific="1"
+	elif [ -n "$idle_path" ]; then
+		idle_details="$(derive_project_details "$idle_path")"
+		idle_project="$(printf '%s\n' "$idle_details" | sed -n '1p')"
+		idle_specific="$(printf '%s\n' "$idle_details" | sed -n '2p')"
 	fi
 
 	# These window options are a derived compatibility/status summary. Pane
@@ -518,15 +583,18 @@ recompute_window_summary() {
 		set-window-option -q -t "$window_id" @agent_context_project "$context_project" \; \
 		set-window-option -q -t "$window_id" @agent_context_pane "$context_pane" \; \
 		set-window-option -q -t "$window_id" @agent_context_updated_at "$context_updated_at" \; \
+		set-window-option -q -t "$window_id" @agent_context_specific "$context_specific" \; \
 		set-window-option -q -t "$window_id" @agent_context_idle_project "$idle_project" \; \
+		set-window-option -q -t "$window_id" @agent_context_idle_specific "$idle_specific" \; \
 		set-window-option -q -t "$window_id" @agent_context_activity "$context_activity"
 }
 
-derive_project() {
+derive_project_details() {
 	context_path="$1"
 	context_root=""
 	context_branch=""
 	context_ticket=""
+	context_specific=""
 
 	if command -v git >/dev/null 2>&1; then
 		context_root="$(git -C "$context_path" rev-parse --show-toplevel 2>/dev/null || printf '')"
@@ -567,22 +635,30 @@ derive_project() {
 	# render identically otherwise. Deliberately keyed on "is this a linked worktree"
 	# rather than on a cross-window collision scan: a scan result depends on the order
 	# windows happen to refresh, so labels would flap as you moved around.
-	if [ -n "$context_root" ] && [ "$(tmux show-option -gqv @tmux_attention_worktree_hint 2>/dev/null || printf '')" = "on" ]; then
+	context_linked_worktree=""
+	if [ -n "$context_root" ]; then
 		git_dir="$(git -C "$context_path" rev-parse --absolute-git-dir 2>/dev/null || printf '')"
 		common_dir="$(git -C "$context_path" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || printf '')"
 		if [ -n "$git_dir" ] && [ -n "$common_dir" ] && [ "$git_dir" != "$common_dir" ]; then
-			context_suffix="$context_suffix@${context_root##*/}"
+			context_linked_worktree="1"
+			if [ "$(tmux show-option -gqv @tmux_attention_worktree_hint 2>/dev/null || printf '')" = "on" ]; then
+				context_suffix="$context_suffix@${context_root##*/}"
+			fi
 		fi
 	fi
 
 	if [ -n "$context_ticket" ]; then
-		printf '%s\n' "$context_ticket$context_suffix"
+		context_label="$context_ticket$context_suffix"
+		context_specific="1"
 	elif [ -n "$context_root" ]; then
-		printf '%s\n' "${context_root##*/}$context_suffix"
+		context_label="${context_root##*/}$context_suffix"
+		context_specific="$context_linked_worktree"
 	else
 		context_path="${context_path%/}"
-		printf '%s\n' "${context_path##*/}"
+		context_label="${context_path##*/}"
 	fi
+
+	printf '%s\n%s\n' "$context_label" "$context_specific"
 }
 
 set_turn_start() {
@@ -591,8 +667,14 @@ set_turn_start() {
 		return 1
 	}
 
+	context_specific="1"
 	if [ -z "$project" ]; then
-		project="$(derive_project "$context_path")"
+		project="$(get_pane_option @agent_pane_context_override)"
+	fi
+	if [ -z "$project" ]; then
+		context_details="$(derive_project_details "$context_path")"
+		project="$(printf '%s\n' "$context_details" | sed -n '1p')"
+		context_specific="$(printf '%s\n' "$context_details" | sed -n '2p')"
 	fi
 
 	# A submitted prompt both begins this pane's active turn and resolves this
@@ -603,7 +685,37 @@ set_turn_start() {
 		set-option -pq -t "$target" @agent_pane_attention_updated_at '' \; \
 		set-option -pq -t "$target" @agent_pane_context_active '1' \; \
 		set-option -pq -t "$target" @agent_pane_context_project "$project" \; \
+		set-option -pq -t "$target" @agent_pane_context_specific "$context_specific" \; \
 		set-option -pq -t "$target" @agent_pane_context_updated_at "$(date +%s)"
+	recompute_window_summary
+}
+
+set_project_override() {
+	context_path="$(tmux display-message -p -t "$target" '#{pane_current_path}' 2>/dev/null)" || {
+		printf 'tmux-attention: invalid target: %s\n' "$target" >&2
+		return 1
+	}
+
+	case "$project_action" in
+		set)
+			tmux set-option -pq -t "$target" @agent_pane_context_override "$project"
+			if [ "$(get_pane_option @agent_pane_context_active)" = "1" ]; then
+				tmux set-option -pq -t "$target" @agent_pane_context_project "$project" \; \
+					set-option -pq -t "$target" @agent_pane_context_specific '1'
+			fi
+			;;
+		clear)
+			tmux set-option -pq -t "$target" @agent_pane_context_override ''
+			if [ "$(get_pane_option @agent_pane_context_active)" = "1" ]; then
+				context_details="$(derive_project_details "$context_path")"
+				inferred_project="$(printf '%s\n' "$context_details" | sed -n '1p')"
+				inferred_specific="$(printf '%s\n' "$context_details" | sed -n '2p')"
+				tmux set-option -pq -t "$target" @agent_pane_context_project "$inferred_project" \; \
+					set-option -pq -t "$target" @agent_pane_context_specific "$inferred_specific"
+			fi
+			;;
+	esac
+
 	recompute_window_summary
 }
 
@@ -623,6 +735,7 @@ set_turn_stop() {
 
 	tmux set-option -pq -t "$target" @agent_pane_context_active '' \; \
 		set-option -pq -t "$target" @agent_pane_context_project '' \; \
+		set-option -pq -t "$target" @agent_pane_context_specific '' \; \
 		set-option -pq -t "$target" @agent_pane_activity '' \; \
 		set-option -pq -t "$target" @agent_pane_context_updated_at ''
 	recompute_window_summary
@@ -646,6 +759,7 @@ set_turn_done() {
 		set-option -pq -t "$target" @agent_pane_attention_updated_at "$updated_at" \; \
 		set-option -pq -t "$target" @agent_pane_context_active '' \; \
 		set-option -pq -t "$target" @agent_pane_context_project '' \; \
+		set-option -pq -t "$target" @agent_pane_context_specific '' \; \
 		set-option -pq -t "$target" @agent_pane_activity '' \; \
 		set-option -pq -t "$target" @agent_pane_context_updated_at ''
 	recompute_window_summary
@@ -662,7 +776,7 @@ schedule_clear_if_viewed() {
 	active_pane="${3:-0}"
 
 	if [ "$attached" != "0" ] && [ "$active_window" = "1" ] && [ "$active_pane" = "1" ]; then
-		script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+		script_dir="$TMUX_ATTENTION_DIR"
 		"$script_dir/clear-after-delay" "$target"
 	fi
 }
@@ -685,6 +799,7 @@ print_get() {
 	updated_at_value="$(get_pane_option @agent_pane_attention_updated_at)"
 	owner_value="$(get_pane_option @agent_pane_owner)"
 	verified_value="$(get_pane_option @agent_pane_attention_verified)"
+	project_override_value="$(get_pane_option @agent_pane_context_override)"
 
 	case "$format" in
 		text)
@@ -707,6 +822,8 @@ print_get() {
 			json_value "$updated_at_value"
 			printf ',"owner":'
 			json_value "$owner_value"
+			printf ',"project_override":'
+			json_value "$project_override_value"
 			printf ',"verified":'
 			if [ "$verified_value" = "1" ]; then
 				printf 'true'
@@ -787,6 +904,7 @@ reason=""
 event_type=""
 activity_value=""
 project=""
+project_action=""
 owner="${TMUX_ATTENTION_OWNER:-}"
 write_verified=""
 pane_owner=""
@@ -910,6 +1028,18 @@ while [ "$#" -gt 0 ]; do
 					event_type="$1"
 					shift
 					continue
+				elif [ "$state" = "project" ]; then
+					if [ -z "$project_action" ]; then
+						project_action="$1"
+					elif [ "$project_action" = "set" ] && [ -z "$project" ]; then
+						project="$1"
+					else
+						printf 'tmux-attention: unexpected argument: %s\n' "$1" >&2
+						usage >&2
+						exit 2
+					fi
+					shift
+					continue
 				elif [ "$state" = "shell-init" ]; then
 					# First positional is the shell; any that follow name
 					# commands to emit a full wrapper for.
@@ -988,6 +1118,29 @@ case "$state" in
 		case "$activity_value" in
 			*"$_tab_char"*|*"$_nl_char"*)
 				printf 'tmux-attention: activity must not contain tabs or newlines\n' >&2
+				usage >&2
+				exit 2
+				;;
+		esac
+		;;
+	project)
+		case "$project_action" in
+			set)
+				if [ -z "$project" ]; then
+					printf 'tmux-attention: project set requires a project label\n' >&2
+					usage >&2
+					exit 2
+				fi
+				;;
+			clear)
+				if [ -n "$project" ]; then
+					printf 'tmux-attention: project clear does not accept a project label\n' >&2
+					usage >&2
+					exit 2
+				fi
+				;;
+			*)
+				printf 'tmux-attention: project requires set <project> or clear\n' >&2
 				usage >&2
 				exit 2
 				;;
@@ -1119,6 +1272,10 @@ esac
 owner_matches || exit 1
 
 case "$state" in
+	project)
+		set_project_override
+		exit $?
+		;;
 	activity)
 		require_target
 		if [ "$activity_value" = "--clear" ]; then

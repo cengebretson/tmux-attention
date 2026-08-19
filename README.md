@@ -95,6 +95,8 @@ set -g @tmux_attention_icon_done ""
 set -g @tmux_attention_icon_working "󰚩"
 set -g @tmux_attention_clear_delay "8"
 set -g @tmux_attention_clear_on_view "on"
+set -g @tmux_attention_tab_mode "preserve" # preserve, smart, or context
+set -g @tmux_attention_tab_separator " · "
 
 set -g @plugin 'cengebretson/tmux-attention'
 ```
@@ -146,6 +148,8 @@ tmux-attention turn-start --project FLYWL-2533
 tmux-attention turn-active
 tmux-attention turn-stop
 tmux-attention turn-done
+tmux-attention project set FLYWL-2533
+tmux-attention project clear
 tmux-attention status-format
 tmux-attention catppuccin-format
 tmux-attention context-format
@@ -313,13 +317,18 @@ window the summary has never run for.
 set -g window-status-format "#{E:@tmux_attention_tab_icon} #{E:@tmux_attention_tab_label}"
 ```
 
-It only ever replaces a name tmux derived itself. `automatic-rename` is off for a
-window you renamed and on while tmux names it from the running process, so the tab
-label defers whenever it is off. A derived label beats `fish`, but it loses to
-`riskos`, and every window sharing a checkout derives the *same* label, so
-overriding chosen names turns a row of distinct tabs into one repeated string. The
-live context is still available in `@tmux_attention_context` for the status bar. To
-opt a window in, turn its automatic-rename back on:
+Automatic window names always become context: a derived label beats `fish`. For a
+window you named deliberately, `@tmux_attention_tab_mode` controls the policy:
+
+| Mode | Deliberately named window |
+|------|----------------------------|
+| `preserve` (default) | Keep `riskos`. Context remains available in the status bar. |
+| `smart` | Append only an explicit project, Jira key, or linked-worktree label: `codex · FLYWL-2533`. Generic repo/directory fallbacks stay out of the tab. |
+| `context` | Replace the chosen name with the current context too. |
+
+Customize the smart-mode joiner with `@tmux_attention_tab_separator` (default
+` · `). `automatic-rename` is off for a window you renamed and on while tmux
+names it from the running process. To return one window to automatic naming:
 
 ```tmux
 set-window-option automatic-rename on
@@ -356,13 +365,37 @@ every tool call reads as a random sample of what the agent was doing some second
 
 `turn-start` derives its project label in this order:
 
-1. Jira-style key in the current Git branch, such as `FLYWL-2533`
-2. Git repository name
-3. Current directory name
+1. Pane-local project declared with `project set`
+2. Jira-style key in the current Git branch, such as `FLYWL-2533`
+3. Git repository name (the worktree folder for a linked worktree)
+4. Current directory name
 
 Use `--project` to override the derived label. Context is pane-scoped, so each
 pane can run and stop an agent independently. The window summary uses the most
 recently started agent while any pane remains active.
+
+For an agent that learns the Jira ticket from the conversation rather than the
+branch, declare it once:
+
+```sh
+tmux-attention project set FLYWL-2533
+tmux-attention project clear
+```
+
+The declared project survives `turn-stop` and `turn-done`, remains visible while
+idle, and is reused by future `turn-start`/`turn-active` calls. `project clear`
+returns to automatic inference. `claim` and `disown` clear it so a new agent in a
+recycled pane cannot inherit the previous agent's ticket. `turn-start --project`
+remains a one-turn override and does not replace the persistent declaration.
+
+An agent behavior file can drive this semantic layer without teaching hooks to
+guess from arbitrary prompt text:
+
+```text
+When working inside tmux on a Jira ticket, run `tmux-attention project set <KEY>`
+after identifying the active ticket. Update it when switching tickets and clear
+it when the pane no longer belongs to a ticket.
+```
 
 The authoritative context pane options are:
 
@@ -370,12 +403,15 @@ The authoritative context pane options are:
 |--------|---------|
 | `@agent_pane_context_active` | `1` while this pane's agent turn is running |
 | `@agent_pane_context_project` | derived or supplied project label |
+| `@agent_pane_context_override` | persistent project supplied by `project set` |
+| `@agent_pane_context_specific` | `1` when the active label is suitable for smart tabs |
 | `@agent_pane_context_updated_at` | Unix timestamp for this pane's latest turn start |
 
 The derived `@agent_context_active`, `@agent_context_project`,
-`@agent_context_pane`, and `@agent_context_updated_at` window options preserve
-the existing status-format contract. `@agent_context_idle_project` carries the
-idle label described above.
+`@agent_context_pane`, `@agent_context_specific`, and
+`@agent_context_updated_at` window options preserve the existing status-format
+contract. `@agent_context_idle_project` and `@agent_context_idle_specific` carry
+the idle label and its smart-tab suitability.
 
 `turn-stop` clears only active-turn context. `turn-done` performs the normal
 completed-response transition: it clears that context and sets the pane's
@@ -453,10 +489,12 @@ can confirm the icon round-trips through your status line:
 ```
 
 If the doctor says your status line is missing the plugin, make sure your tmux
-theme includes:
+theme includes at least one of the plugin's marker/context helpers:
 
 ```tmux
 #{E:@tmux_attention_status}
+#{E:@tmux_attention_tab_icon}
+#{E:@tmux_attention_context}
 ```
 
 You can print default snippets with:
