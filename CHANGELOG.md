@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Documentation
+
+- Document the configurable project/slug separator and repair the worktree-hint
+  option table.
+
 ## [0.12.0] - 2026-08-19
 
 ### Added

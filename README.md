@@ -344,7 +344,9 @@ something else. Two optional suffixes refine a **derived** label (an explicit
 | Option | Default | Effect |
 |--------|---------|--------|
 | `@tmux_attention_dirty_marker` | `*` | Appended when the tree has uncommitted changes. Set to `off` to disable, or to any string to change the glyph. |
-| `@tmux_attention_worktree_hint` | off | Set `on` to append `@<worktree-dir>` inside a linked worktree, so two worktrees on branches sharing a ticket are distinguishable. Keyed on "is this a linked worktree" rather than a cross-window collision scan, because a scan's result depends on the order windows refresh and the labels would flap. | It is deliberately not cached on the pane path, because
+| `@tmux_attention_worktree_hint` | off | Set `on` to append `@<worktree-dir>` inside a linked worktree, so two worktrees on branches sharing a ticket are distinguishable. Keyed on "is this a linked worktree" rather than a cross-window collision scan, because a scan's result depends on the order windows refresh and the labels would flap. |
+
+The worktree hint is deliberately not cached on the pane path, because
 `git checkout` changes the branch without changing the directory.
 
 ### Activity
@@ -404,7 +406,8 @@ tmux-attention project clear
 The declared project and optional slug survive `turn-stop` and `turn-done`, remain
 visible while idle, and are reused by future `turn-start`/`turn-active` calls. The
 right-side context renders `FLYWL-2533 · borrower-dashboard`, while tabs retain the
-short project key. `project clear`
+short project key. Customize the detailed-label joiner with
+`@tmux_attention_project_separator` (default ` · `). `project clear`
 returns to automatic inference. `claim` and `disown` clear it so a new agent in a
 recycled pane cannot inherit the previous agent's ticket. `turn-start --project`
 remains a one-turn override and does not replace the persistent declaration.
