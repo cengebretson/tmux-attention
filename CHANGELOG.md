@@ -6,6 +6,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Derive detailed Jira context from the Git branch suffix automatically while
+  keeping tabs on the short Jira key.
+- Read branch-matched `tmux-attention-context` metadata from a worktree's private
+  Git directory, allowing launchers to supply context for unconventional branches.
+- Add `project sync` to refresh active and idle derived context without creating
+  or clearing a pane override.
+
 ## [0.11.0] - 2026-08-19
 
 ### Added

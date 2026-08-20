@@ -38,6 +38,7 @@ Usage: tmux-attention [input|blocked|review|done|clear] [--target <tmux-target>]
                                 [--source <source>] [--reason <reason>]
        tmux-attention project set <project> [--slug <slug>]
                                   [--target <tmux-target>]
+       tmux-attention project sync [--target <tmux-target>]
        tmux-attention project clear [--target <tmux-target>]
        tmux-attention refresh [--target <tmux-target>]
        tmux-attention claim --owner <id> [--target <tmux-target>]
@@ -83,6 +84,10 @@ before Git branch, repository, or directory inference, and the idle status label
 keeps showing it between turns. project clear returns the pane to automatic
 inference. Pane claim/disown also clear the declaration so a recycled pane cannot
 inherit another agent's ticket.
+
+project sync refreshes the active and idle context from the current declaration,
+worktree metadata, Git branch, repository, or directory without creating or
+clearing a persistent pane override.
 
 claim stamps a pane with an owner id and clears any marker it inherited, so a
 new agent never starts wearing the previous occupant's state. A launcher runs it
@@ -620,11 +625,45 @@ format_declared_project() {
 	printf '%s%s%s' "$declared_project" "$project_separator" "$declared_slug"
 }
 
+read_worktree_context() {
+	metadata_path="$1"
+	metadata_branch_current="$2"
+	metadata_git_dir="$(git -C "$metadata_path" rev-parse --absolute-git-dir 2>/dev/null || printf '')"
+	[ -n "$metadata_git_dir" ] || return 1
+	metadata_file="$metadata_git_dir/tmux-attention-context"
+	[ -r "$metadata_file" ] || return 1
+
+	metadata_branch=""
+	metadata_project=""
+	metadata_slug=""
+	metadata_cr="$(printf '\r')"
+	while IFS='=' read -r metadata_key metadata_value || [ -n "$metadata_key$metadata_value" ]; do
+		metadata_value="${metadata_value%"$metadata_cr"}"
+		case "$metadata_key" in
+			branch) metadata_branch="$metadata_value" ;;
+			project) metadata_project="$metadata_value" ;;
+			slug) metadata_slug="$metadata_value" ;;
+		esac
+	done <"$metadata_file"
+
+	[ -n "$metadata_project" ] || return 1
+	if [ -n "$metadata_branch" ] && [ "$metadata_branch" != "$metadata_branch_current" ]; then
+		return 1
+	fi
+	metadata_tab="$(printf '\t')"
+	case "$metadata_project$metadata_slug" in
+		*"$metadata_tab"*) return 1 ;;
+	esac
+
+	printf '%s\n%s\n' "$metadata_project" "$metadata_slug"
+}
+
 derive_project_details() {
 	context_path="$1"
 	context_root=""
 	context_branch=""
 	context_ticket=""
+	context_slug=""
 	context_specific=""
 
 	if command -v git >/dev/null 2>&1; then
@@ -632,14 +671,31 @@ derive_project_details() {
 		context_branch="$(git -C "$context_path" symbolic-ref --quiet --short HEAD 2>/dev/null || printf '')"
 	fi
 
-	if [ -n "$context_branch" ] && command -v awk >/dev/null 2>&1; then
-		context_ticket="$(
+	metadata_details="$(read_worktree_context "$context_path" "$context_branch" || true)"
+	if [ -n "$metadata_details" ]; then
+		context_ticket="$(printf '%s\n' "$metadata_details" | sed -n '1p')"
+		context_slug="$(printf '%s\n' "$metadata_details" | sed -n '2p')"
+		context_specific="1"
+	fi
+
+	if [ -z "$context_ticket" ] && [ -n "$context_branch" ] && command -v awk >/dev/null 2>&1; then
+		context_ticket_match="$(
 			printf '%s\n' "$context_branch" |
 				awk 'match($0, /[[:upper:]][[:upper:][:digit:]]*-[[:digit:]]+/) {
 					print substr($0, RSTART, RLENGTH)
 					exit
 				}'
 		)"
+		context_ticket="$context_ticket_match"
+		if [ -n "$context_ticket_match" ]; then
+			context_branch_tail="${context_branch#*"$context_ticket_match"}"
+			context_branch_tail="${context_branch_tail#[-_/.]}"
+			context_slug="$(
+				printf '%s' "$context_branch_tail" |
+					tr '[:upper:]' '[:lower:]' |
+					sed -E 's#[^a-z0-9]+#-#g; s#^-+##; s#-+$##'
+			)"
+		fi
 	fi
 
 	# Optional suffixes. Both are read from global tmux options so a user can turn them off
@@ -679,7 +735,7 @@ derive_project_details() {
 	fi
 
 	if [ -n "$context_ticket" ]; then
-		context_label="$context_ticket$context_suffix"
+		context_label="$(format_declared_project "$context_ticket$context_suffix" "$context_slug")"
 		context_specific="1"
 		context_tab_label="$context_ticket"
 	elif [ -n "$context_root" ]; then
@@ -763,6 +819,25 @@ set_project_override() {
 				tmux set-option -pq -t "$target" @agent_pane_context_project "$inferred_project" \; \
 					set-option -pq -t "$target" @agent_pane_context_tab_project "$inferred_tab_project" \; \
 					set-option -pq -t "$target" @agent_pane_context_specific "$inferred_specific"
+			fi
+			;;
+		sync)
+			if [ "$(get_pane_option @agent_pane_context_active)" = "1" ]; then
+				synced_project="$(get_pane_option @agent_pane_context_override)"
+				if [ -n "$synced_project" ]; then
+					synced_tab_project="$synced_project"
+					synced_slug="$(get_pane_option @agent_pane_context_slug)"
+					synced_project="$(format_declared_project "$synced_project" "$synced_slug")"
+					synced_specific="1"
+				else
+					synced_details="$(derive_project_details "$context_path")"
+					synced_project="$(printf '%s\n' "$synced_details" | sed -n '1p')"
+					synced_specific="$(printf '%s\n' "$synced_details" | sed -n '2p')"
+					synced_tab_project="$(printf '%s\n' "$synced_details" | sed -n '3p')"
+				fi
+				tmux set-option -pq -t "$target" @agent_pane_context_project "$synced_project" \; \
+					set-option -pq -t "$target" @agent_pane_context_tab_project "$synced_tab_project" \; \
+					set-option -pq -t "$target" @agent_pane_context_specific "$synced_specific"
 			fi
 			;;
 	esac
@@ -1228,8 +1303,15 @@ case "$state" in
 					exit 2
 				fi
 				;;
+			sync)
+				if [ -n "$project" ] || [ -n "$project_slug" ]; then
+					printf 'tmux-attention: project sync does not accept a project label or slug\n' >&2
+					usage >&2
+					exit 2
+				fi
+				;;
 			*)
-				printf 'tmux-attention: project requires set <project> or clear\n' >&2
+				printf 'tmux-attention: project requires set <project>, sync, or clear\n' >&2
 				usage >&2
 				exit 2
 				;;

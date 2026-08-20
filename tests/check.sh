@@ -232,8 +232,8 @@ idle_pane="$(tmux_test new-window -d -P -F '#{pane_id}' -n idle -c "$idle_repo")
 # deliberate-name case has its own test below.
 tmux_test set-window-option -t "$idle_pane" automatic-rename on
 "$ROOT_DIR/scripts/tmux-attention" refresh --target "$idle_pane"
-assert_eq "FLYWL-4242" "$(tmux_test show-window-option -t "$idle_pane" -v @agent_context_idle_project)" "refresh derives an idle project from the branch ticket"
-assert_eq "FLYWL-4242" "$(tmux_test display-message -p -t "$idle_pane" '#{E:@tmux_attention_context}')" "context format renders the idle ticket with no active turn"
+assert_eq "FLYWL-4242 · idle-label" "$(tmux_test show-window-option -t "$idle_pane" -v @agent_context_idle_project)" "refresh derives an idle project and slug from the branch"
+assert_eq "FLYWL-4242 · idle-label" "$(tmux_test display-message -p -t "$idle_pane" '#{E:@tmux_attention_context}')" "context format renders the idle ticket and branch slug with no active turn"
 assert_eq "FLYWL-4242" "$(tmux_test display-message -p -t "$idle_pane" '#{E:@tmux_attention_tab_label}')" "tab label renders the idle ticket"
 
 # An agent can publish semantic task context once and keep it across turns. This is
@@ -257,7 +257,29 @@ assert_eq "AGENT-77" "$(tmux_test display-message -p -t "$idle_pane" '#{E:@tmux_
 "$ROOT_DIR/scripts/tmux-attention" project clear --target "$idle_pane"
 assert_eq "" "$(tmux_test show-options -pqv -t "$idle_pane" @agent_pane_context_override)" "project clear removes the pane-local override"
 assert_eq "" "$(tmux_test show-options -pqv -t "$idle_pane" @agent_pane_context_slug)" "project clear removes the pane-local slug"
-assert_eq "FLYWL-4242" "$(tmux_test show-window-option -t "$idle_pane" -v @agent_context_idle_project)" "project clear restores automatic ticket inference"
+assert_eq "FLYWL-4242 · idle-label" "$(tmux_test show-window-option -t "$idle_pane" -v @agent_context_idle_project)" "project clear restores automatic ticket and slug inference"
+
+# Worktree-local metadata is stronger than branch inference, but records its branch so
+# it cannot silently survive a checkout to unrelated work. `project sync` refreshes an
+# already-active pane without converting the derived value into a persistent override.
+metadata_file="$(git -C "$idle_repo" rev-parse --absolute-git-dir)/tmux-attention-context"
+printf 'branch=feature/FLYWL-4242-idle-label\nproject=META-42\nslug=metadata-label\n' >"$metadata_file"
+"$ROOT_DIR/scripts/tmux-attention" refresh --target "$idle_pane"
+assert_eq "META-42 · metadata-label" "$(tmux_test display-message -p -t "$idle_pane" '#{E:@tmux_attention_context}')" "matching worktree metadata outranks branch inference"
+assert_eq "META-42" "$(tmux_test display-message -p -t "$idle_pane" '#{E:@tmux_attention_tab_label}')" "metadata keeps the tab project compact"
+
+"$ROOT_DIR/scripts/tmux-attention" turn-start --target "$idle_pane"
+printf 'branch=feature/FLYWL-4242-idle-label\nproject=META-42\nslug=updated-label\n' >"$metadata_file"
+"$ROOT_DIR/scripts/tmux-attention" project sync --target "$idle_pane"
+assert_eq "META-42 · updated-label" "$(tmux_test display-message -p -t "$idle_pane" '#{E:@tmux_attention_context}')" "project sync refreshes active worktree metadata"
+assert_eq "" "$(tmux_test show-options -pqv -t "$idle_pane" @agent_pane_context_override)" "project sync does not create a pane override"
+
+printf 'branch=feature/OTHER-1-stale\nproject=STALE-1\nslug=wrong-branch\n' >"$metadata_file"
+"$ROOT_DIR/scripts/tmux-attention" project sync --target "$idle_pane"
+assert_eq "FLYWL-4242 · idle-label" "$(tmux_test display-message -p -t "$idle_pane" '#{E:@tmux_attention_context}')" "stale metadata is ignored after a branch mismatch"
+"$ROOT_DIR/scripts/tmux-attention" turn-stop --target "$idle_pane"
+rm -f "$metadata_file"
+"$ROOT_DIR/scripts/tmux-attention" refresh --target "$idle_pane"
 
 # Activity layer: a verb rides alongside the project without replacing it, and is opt-in.
 "$ROOT_DIR/scripts/tmux-attention" turn-start --target "$idle_pane" --project ACT-1
@@ -283,34 +305,34 @@ printf 'change\n' >"$idle_repo/tracked.txt"
 (cd "$idle_repo" && git add tracked.txt && git -c user.email=t@example.com -c user.name=t commit -q -m add) >/dev/null 2>&1
 printf 'edited\n' >>"$idle_repo/tracked.txt"
 "$ROOT_DIR/scripts/tmux-attention" refresh --target "$idle_pane"
-assert_eq "FLYWL-4242*" "$(tmux_test show-window-option -t "$idle_pane" -v @agent_context_idle_project)" "dirty tree appends the default marker"
+assert_eq "FLYWL-4242* · idle-label" "$(tmux_test show-window-option -t "$idle_pane" -v @agent_context_idle_project)" "dirty tree appends the default marker"
 
 tmux_test set-option -g @tmux_attention_dirty_marker "off"
 "$ROOT_DIR/scripts/tmux-attention" refresh --target "$idle_pane"
-assert_eq "FLYWL-4242" "$(tmux_test show-window-option -t "$idle_pane" -v @agent_context_idle_project)" "dirty marker can be turned off"
+assert_eq "FLYWL-4242 · idle-label" "$(tmux_test show-window-option -t "$idle_pane" -v @agent_context_idle_project)" "dirty marker can be turned off"
 
 tmux_test set-option -g @tmux_attention_dirty_marker "~"
 "$ROOT_DIR/scripts/tmux-attention" refresh --target "$idle_pane"
-assert_eq "FLYWL-4242~" "$(tmux_test show-window-option -t "$idle_pane" -v @agent_context_idle_project)" "dirty marker is configurable"
+assert_eq "FLYWL-4242~ · idle-label" "$(tmux_test show-window-option -t "$idle_pane" -v @agent_context_idle_project)" "dirty marker is configurable"
 
 tmux_test set-option -g @tmux_attention_dirty_marker "off"
 (cd "$idle_repo" && git checkout -q -- tracked.txt) >/dev/null 2>&1
 "$ROOT_DIR/scripts/tmux-attention" refresh --target "$idle_pane"
-assert_eq "FLYWL-4242" "$(tmux_test show-window-option -t "$idle_pane" -v @agent_context_idle_project)" "clean tree drops the marker"
+assert_eq "FLYWL-4242 · idle-label" "$(tmux_test show-window-option -t "$idle_pane" -v @agent_context_idle_project)" "clean tree drops the marker"
 
 # Worktree hint is opt-in and off by default.
 wt_path="$TMP_BIN/wt-FLYWL-4242-second"
 (cd "$idle_repo" && git worktree add -q -b feature/FLYWL-4242-second "$wt_path") >/dev/null 2>&1
 wt_pane="$(tmux_test new-window -d -P -F '#{pane_id}' -n wt -c "$wt_path")"
 "$ROOT_DIR/scripts/tmux-attention" refresh --target "$wt_pane"
-assert_eq "FLYWL-4242" "$(tmux_test show-window-option -t "$wt_pane" -v @agent_context_idle_project)" "worktree hint is off by default"
+assert_eq "FLYWL-4242 · second" "$(tmux_test show-window-option -t "$wt_pane" -v @agent_context_idle_project)" "worktree hint is off by default"
 
 tmux_test set-option -g @tmux_attention_worktree_hint "on"
 "$ROOT_DIR/scripts/tmux-attention" refresh --target "$wt_pane"
-assert_eq "FLYWL-4242@wt-FLYWL-4242-second" "$(tmux_test show-window-option -t "$wt_pane" -v @agent_context_idle_project)" "worktree hint disambiguates a linked worktree"
+assert_eq "FLYWL-4242@wt-FLYWL-4242-second · second" "$(tmux_test show-window-option -t "$wt_pane" -v @agent_context_idle_project)" "worktree hint disambiguates a linked worktree"
 
 "$ROOT_DIR/scripts/tmux-attention" refresh --target "$idle_pane"
-assert_eq "FLYWL-4242" "$(tmux_test show-window-option -t "$idle_pane" -v @agent_context_idle_project)" "worktree hint is not added to the main checkout"
+assert_eq "FLYWL-4242 · idle-label" "$(tmux_test show-window-option -t "$idle_pane" -v @agent_context_idle_project)" "worktree hint is not added to the main checkout"
 tmux_test set-option -g @tmux_attention_worktree_hint "off"
 
 # An active turn still wins over the idle label.
@@ -318,7 +340,7 @@ tmux_test set-option -g @tmux_attention_worktree_hint "off"
 assert_eq "OVERRIDE-1" "$(tmux_test display-message -p -t "$idle_pane" '#{E:@tmux_attention_context}')" "active project outranks the idle label"
 assert_eq "OVERRIDE-1" "$(tmux_test display-message -p -t "$idle_pane" '#{E:@tmux_attention_tab_label}')" "tab label prefers the active project"
 "$ROOT_DIR/scripts/tmux-attention" turn-stop --target "$idle_pane"
-assert_eq "FLYWL-4242" "$(tmux_test display-message -p -t "$idle_pane" '#{E:@tmux_attention_context}')" "context returns to the idle ticket after the turn stops"
+assert_eq "FLYWL-4242 · idle-label" "$(tmux_test display-message -p -t "$idle_pane" '#{E:@tmux_attention_context}')" "context returns to the idle ticket and slug after the turn stops"
 
 # The refresh hook must actually be registered, or the idle label silently stays empty and
 # the whole feature is inert. This is the wiring that was missing when the label was added.
@@ -334,16 +356,16 @@ done
 tmux_test set-window-option -t "$idle_pane" @agent_context_idle_project ""
 tmux_test select-window -t "$idle_pane"
 sleep 2
-assert_eq "FLYWL-4242" "$(tmux_test show-window-option -t "$idle_pane" -v @agent_context_idle_project)" "after-select-window hook repopulates the idle label"
+assert_eq "FLYWL-4242 · idle-label" "$(tmux_test show-window-option -t "$idle_pane" -v @agent_context_idle_project)" "after-select-window hook repopulates the idle label"
 
 # A window someone named keeps that name, even where a ticket IS derivable. Overriding it
 # replaced distinct tabs ("poc", "bug", "riskos") with one repeated repo name for every
 # window sharing a checkout, which is strictly less information than the names it replaced.
 named_pane="$(tmux_test new-window -d -P -F '#{pane_id}' -n riskos -c "$idle_repo")"
 "$ROOT_DIR/scripts/tmux-attention" refresh --target "$named_pane"
-assert_eq "FLYWL-4242" "$(tmux_test show-window-option -t "$named_pane" -v @agent_context_idle_project)" "a deliberately named window still derives its idle label"
+assert_eq "FLYWL-4242 · idle-label" "$(tmux_test show-window-option -t "$named_pane" -v @agent_context_idle_project)" "a deliberately named window still derives its detailed idle label"
 assert_eq "riskos" "$(tmux_test display-message -p -t "$named_pane" '#{E:@tmux_attention_tab_label}')" "tab label keeps a deliberately chosen window name"
-assert_eq "FLYWL-4242" "$(tmux_test display-message -p -t "$named_pane" '#{E:@tmux_attention_context}')" "context still shows the ticket for a deliberately named window"
+assert_eq "FLYWL-4242 · idle-label" "$(tmux_test display-message -p -t "$named_pane" '#{E:@tmux_attention_context}')" "context still shows the ticket and slug for a deliberately named window"
 
 tmux_test set-option -g @tmux_attention_tab_mode "smart"
 assert_eq "riskos · FLYWL-4242" "$(tmux_test display-message -p -t "$named_pane" '#{E:@tmux_attention_tab_label}')" "smart tab mode appends meaningful ticket context"

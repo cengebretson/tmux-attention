@@ -149,6 +149,7 @@ tmux-attention turn-active
 tmux-attention turn-stop
 tmux-attention turn-done
 tmux-attention project set FLYWL-2533 --slug borrower-dashboard
+tmux-attention project sync
 tmux-attention project clear
 tmux-attention status-format
 tmux-attention catppuccin-format
@@ -364,12 +365,29 @@ every tool call reads as a random sample of what the agent was doing some second
 | `@agent_pane_activity` | - | Pane option holding the verb. |
 | `@agent_context_activity` | - | Window summary of the active pane's verb. |
 
-`turn-start` derives its project label in this order:
+`turn-start`, `refresh`, and `project sync` derive project context in this order:
 
 1. Pane-local project declared with `project set`
-2. Jira-style key in the current Git branch, such as `FLYWL-2533`
-3. Git repository name (the worktree folder for a linked worktree)
-4. Current directory name
+2. Branch-matched `tmux-attention-context` metadata in the worktree's private Git directory
+3. Jira-style key and trailing slug in the current Git branch, such as `FLYWL-2533-vue-island-foundation`
+4. Git repository name (the worktree folder for a linked worktree)
+5. Current directory name
+
+For `feature/FLYWL-2533-vue-island-foundation`, automatic inference renders
+`FLYWL-2533 · vue-island-foundation` in the detailed status and `FLYWL-2533` in
+the compact tab. A worktree helper can supply the same context for an unusually
+named branch by writing this untracked file at
+`$(git rev-parse --absolute-git-dir)/tmux-attention-context`:
+
+```text
+branch=feature/design-system_v2
+project=FLYWL-2536
+slug=design-system-v2-poc
+```
+
+If `branch` is present and no longer matches the current branch, the metadata is
+ignored. `project sync` refreshes an already-active pane after a branch or metadata
+change without setting or clearing an explicit override.
 
 Use `--project` to override the derived label. Context is pane-scoped, so each
 pane can run and stop an agent independently. The window summary uses the most
@@ -395,10 +413,11 @@ An agent behavior file can drive this semantic layer without teaching hooks to
 guess from arbitrary prompt text:
 
 ```text
-When working inside tmux on a Jira ticket, run
-`tmux-attention project set <KEY> --slug <short-kebab-case-summary>` after
-identifying the active ticket. Update it when switching tickets and clear it when
-the pane no longer belongs to a ticket.
+tmux-attention normally derives Jira context from worktree metadata or the branch.
+When that automatic context is missing or wrong, run
+`tmux-attention project set <KEY> --slug <short-kebab-case-summary>`. Update the
+declaration when switching tickets and clear it when the pane no longer belongs
+to a ticket.
 ```
 
 The authoritative context pane options are:
