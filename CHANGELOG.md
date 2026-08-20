@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-08-20
+
 ### Documentation
 
 - Document the configurable project/slug separator and repair the worktree-hint
@@ -387,7 +389,8 @@ who can run tmux can set the option too.
   server and a GitHub Actions CI workflow running ShellCheck and the tests.
 - Documentation: `README.md` and `docs/hooks.md`.
 
-[Unreleased]: https://github.com/cengebretson/tmux-attention/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/cengebretson/tmux-attention/compare/v0.12.1...HEAD
+[0.12.1]: https://github.com/cengebretson/tmux-attention/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/cengebretson/tmux-attention/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/cengebretson/tmux-attention/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/cengebretson/tmux-attention/compare/v0.9.1...v0.10.0
