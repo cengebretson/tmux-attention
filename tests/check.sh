@@ -2,6 +2,10 @@
 
 set -eu
 
+# Agent shells may export their pane-owner identity. The suite controls owner
+# identity explicitly, so ambient state must not change its no-owner cases.
+unset TMUX_ATTENTION_OWNER
+
 ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 REAL_TMUX="$(command -v tmux)"
 TMP_BIN="$(mktemp -d "${TMPDIR:-/tmp}/tmux-attention-bin.XXXXXX")"
