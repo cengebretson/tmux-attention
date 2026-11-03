@@ -40,17 +40,17 @@ set_default_option "@tmux_attention_clear_on_view" "on"
 set_default_option "@tmux_attention_working_animation" "off"
 # Style picks the frames: "spinner" uses @tmux_attention_working_frames and
 # @tmux_attention_working_frame_ticks, "robot" is a built-in Nerd Font robot
-# that idles, blinks, smiles, glances sideways and gets excited on a ~7s loop.
+# that idles, smiles, glances sideways and gets excited on a ~8s loop.
 set_default_option "@tmux_attention_working_style" "spinner"
 set_default_option "@tmux_attention_working_frames" "⠋,⠙,⠹,⠸,⠼,⠴,⠦,⠧,⠇,⠏"
 set_default_option "@tmux_attention_working_frame_ticks" "1"
 
 # robot_frames prints the built-in robot animation: one frame per 200ms tick,
 # repeated to set how long each face is held. Faces are nf-md-robot (rest),
-# robot_outline (blink), robot_happy, robot_confused (glance) and
+# robot_happy, robot_confused (glance) and
 # robot_excited, all in Nerd Fonts 3.
 robot_frames() {
-	local rest='󰚩' blink='󱙺' happy='󱜙' glance='󱚟' excited='󱚣'
+	local rest='󰚩' happy='󱜙' glance='󱚟' excited='󱚣'
 	local -a frames=()
 	add_frames() {
 		local face="$1" count="$2" i
@@ -59,12 +59,8 @@ robot_frames() {
 		done
 	}
 	add_frames "$rest" 10
-	add_frames "$blink" 1
-	add_frames "$rest" 6
 	add_frames "$happy" 5
-	add_frames "$rest" 4
-	add_frames "$blink" 1
-	add_frames "$rest" 6
+	add_frames "$rest" 10
 	add_frames "$glance" 4
 	add_frames "$rest" 3
 	add_frames "$excited" 3
@@ -77,6 +73,19 @@ robot_frames() {
 # pane done on success or blocked on a non-zero exit.
 set_default_option "@tmux_attention_shell_done" "off"
 set_default_option "@tmux_attention_shell_done_min_seconds" "30"
+# PR status: show the current branch's pull request (number, checks, review)
+# next to the context. Looked up with `gh` in the background and cached for
+# @tmux_attention_pr_ttl seconds, so the status bar never waits on the network.
+set_default_option "@tmux_attention_pr_status" "off"
+set_default_option "@tmux_attention_pr_ttl" "180"
+# Command summary (tmux 3.8): show "⏵ make t 3m" while a shell command runs in
+# the current pane, and "✗ make t" after it fails, until the next command.
+set_default_option "@tmux_attention_command_summary" "off"
+set_default_option "@tmux_attention_command_max" "24"
+# Refresh the context on every shell prompt (tmux 3.8 OSC 133), so `cd` and
+# `git checkout` update the label right away instead of on the next focus
+# change. Costs a couple of git calls per prompt, in the background.
+set_default_option "@tmux_attention_refresh_on_prompt" "on"
 
 # tmux_supports_38 reports whether the running server is tmux 3.8 or newer.
 # Versions look like "3.8", "3.7c" or "next-3.9"; only the leading
@@ -134,6 +143,15 @@ set_default_option "@tmux_attention_project_separator" " · "
 
 set_default_option "@tmux_attention_context" "#{?#{==:#{@agent_context_active},1},#{@agent_context_project}#{E:@tmux_attention_activity_suffix},#{?#{!=:#{@agent_context_idle_project},},#{@agent_context_idle_project},#{b:pane_current_path}}}"
 
+# Details that follow the context label: PR status, then the current pane's
+# command summary, each led by the project separator. Kept separate from
+# @tmux_attention_context so themes can place or drop them independently:
+#   #{E:@tmux_attention_context}#{E:@tmux_attention_context_details}
+set_default_option "@tmux_attention_command_duration" "#{?#{e|<:#{pane_command_duration},60},#{pane_command_duration}s,#{?#{e|<:#{pane_command_duration},3600},#{e|/:#{pane_command_duration},60}m,#{e|/:#{pane_command_duration},3600}h}}"
+set_default_option "@tmux_attention_command_text" "#{?#{&&:#{==:#{@tmux_attention_command_summary},on},#{&&:#{==:#{@agent_pane_owner}#{@agent_pane_context_active},},#{!=:#{@agent_pane_command},}}},#{?#{==:#{pane_command_running},1},#{E:@tmux_attention_project_separator}⏵ #{@agent_pane_command} #{E:@tmux_attention_command_duration},#{?#{&&:#{!=:#{pane_command_status},},#{!=:#{pane_command_status},0}},#{E:@tmux_attention_project_separator}✗ #{@agent_pane_command},}},}"
+set_default_option "@tmux_attention_summary_max" "40"
+set_default_option "@tmux_attention_context_details" "#{?#{!=:#{@agent_context_summary},},#{E:@tmux_attention_project_separator}#{@agent_context_summary},}#{?#{!=:#{@agent_context_pr},},#{E:@tmux_attention_project_separator}#{@agent_context_pr},}#{E:@tmux_attention_command_text}"
+
 # Same resolution for window tabs, but falling back to the window name rather than a
 # directory, since that is what a tab shows by default. Pair it with
 # @tmux_attention_tab_icon in window-status-format. Intermediate formats keep the policy
@@ -187,6 +205,17 @@ if [ "$supports_38" = 1 ]; then
 	shell_done_gate="#{&&:#{==:#{@tmux_attention_shell_done},on},#{&&:#{==:#{@agent_pane_owner},},#{e|>=:#{pane_command_duration},#{@tmux_attention_shell_done_min_seconds}}}}"
 	shell_done_run="run-shell -b \"\\\"$CURRENT_DIR/scripts/tmux-attention\\\" #{?#{==:#{pane_command_status},0},done,blocked} --target \\\"#{pane_id}\\\" --source shell --reason #{?#{==:#{pane_command_status},0},command_finished,command_failed} >/dev/null 2>&1 || true\""
 	queue_tmux set-hook -g "pane-command-finished[90]" "if -F '$shell_done_gate' '$shell_done_run'"
+
+	# Command summary: forget the previous command synchronously (so a command
+	# that ends before the background read cannot inherit the old name), then
+	# capture the new one in the background.
+	command_gate="#{&&:#{==:#{@tmux_attention_command_summary},on},#{==:#{@agent_pane_owner}#{@agent_pane_context_active},}}"
+	command_run="run-shell -b \"\\\"$CURRENT_DIR/scripts/tmux-attention\\\" command-start --target \\\"#{pane_id}\\\" >/dev/null 2>&1 || true\""
+	queue_tmux set-hook -g "pane-command-started[90]" "set-option -pq -t '#{pane_id}' @agent_pane_command '' ; if -F '$command_gate' '$command_run'"
+
+	prompt_gate="#{==:#{@tmux_attention_refresh_on_prompt},on}"
+	prompt_run="run-shell -b \"\\\"$CURRENT_DIR/scripts/tmux-attention\\\" refresh --target \\\"#{window_id}\\\" >/dev/null 2>&1 || true\""
+	queue_tmux set-hook -g "pane-shell-prompt[90]" "if -F '$prompt_gate' '$prompt_run'"
 fi
 
 tmux "${load_batch[@]}"

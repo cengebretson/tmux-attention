@@ -40,6 +40,8 @@ Usage: tmux-attention [input|blocked|review|done|clear] [--target <tmux-target>]
                                   [--target <tmux-target>]
        tmux-attention project sync [--target <tmux-target>]
        tmux-attention project clear [--target <tmux-target>]
+       tmux-attention summary set <phrase...> [--target <tmux-target>]
+       tmux-attention summary clear [--target <tmux-target>]
        tmux-attention refresh [--target <tmux-target>]
        tmux-attention claim --owner <id> [--target <tmux-target>]
        tmux-attention disown [--target <tmux-target>]
@@ -76,6 +78,13 @@ turn-done atomically clears the target pane's active-turn context and sets its
 done attention marker. Its default source is turn and its default reason is
 response_ready. Use it when an agent Stop event means a completed response is
 ready for the user, rather than that an entire project or conversation ended.
+
+summary set stores a short agent-declared phrase for the pane (3-5 words such
+as "fix PR status cache"), shown in @tmux_attention_context_details until it is
+replaced or cleared. Words after "set" are joined, so quoting is optional.
+
+command-start and pr-fetch are internal: tmux 3.8 hooks call them to capture a
+running command's summary and to refresh the cached pull request status.
 
 project set stores a pane-local project override that survives turn boundaries.
 An optional --slug is appended in the detailed status context while tabs retain
@@ -497,7 +506,7 @@ recompute_window_summary() {
 		return 1
 	}
 	tab="$(printf '\t')"
-	pane_rows="$(tmux list-panes -t "$window_id" -F "#{pane_id}${tab}#{@agent_pane_attention}${tab}#{@agent_pane_attention_source}${tab}#{@agent_pane_attention_reason}${tab}#{@agent_pane_attention_updated_at}${tab}#{@agent_pane_context_active}${tab}#{@agent_pane_context_project}${tab}#{@agent_pane_context_updated_at}${tab}#{@agent_pane_activity}${tab}#{@agent_pane_context_specific}${tab}#{@agent_pane_context_tab_project}" 2>/dev/null)" || return 1
+	pane_rows="$(tmux list-panes -t "$window_id" -F "#{pane_id}${tab}#{@agent_pane_attention}${tab}#{@agent_pane_attention_source}${tab}#{@agent_pane_attention_reason}${tab}#{@agent_pane_attention_updated_at}${tab}#{@agent_pane_context_active}${tab}#{@agent_pane_context_project}${tab}#{@agent_pane_context_updated_at}${tab}#{@agent_pane_activity}${tab}#{@agent_pane_context_specific}${tab}#{@agent_pane_context_tab_project}${tab}#{@agent_pane_summary}" 2>/dev/null)" || return 1
 
 	attention_row="$(
 		printf '%s\n' "$pane_rows" |
@@ -546,9 +555,10 @@ recompute_window_summary() {
 				best_activity = $9
 				best_specific = $10
 				best_tab_project = $11
+				best_summary = $12
 			}
 			END {
-				if (best_pane != "") printf "%s\n%s\n%s\n%s\n%s\n%s\n", best_project, best_pane, best_updated_at, best_activity, best_specific, best_tab_project
+				if (best_pane != "") printf "%s\n%s\n%s\n%s\n%s\n%s\n%s\n", best_project, best_pane, best_updated_at, best_activity, best_specific, best_tab_project, best_summary
 			}'
 	)"
 	context_active=""
@@ -558,6 +568,7 @@ recompute_window_summary() {
 	context_updated_at=""
 	context_specific=""
 	context_tab_project=""
+	context_summary=""
 	if [ -n "$context_row" ]; then
 		context_active="1"
 		context_project="$(printf '%s\n' "$context_row" | sed -n '1p')"
@@ -566,6 +577,7 @@ recompute_window_summary() {
 		context_activity="$(printf '%s\n' "$context_row" | sed -n '4p')"
 		context_specific="$(printf '%s\n' "$context_row" | sed -n '5p')"
 		context_tab_project="$(printf '%s\n' "$context_row" | sed -n '6p')"
+		context_summary="$(printf '%s\n' "$context_row" | sed -n '7p')"
 		[ -n "$context_tab_project" ] || context_tab_project="$context_project"
 	fi
 
@@ -575,11 +587,15 @@ recompute_window_summary() {
 	# this summary, so it tracks branch and directory changes as soon as the window is
 	# focused again. Falls back inside `derive_project_details` to the repo name, then the
 	# directory name, so it is never empty for a real pane.
-	idle_fields="$(tmux display-message -p -t "$window_id" "#{pane_current_path}${tab}#{@agent_pane_context_override}${tab}#{@agent_pane_context_slug}" 2>/dev/null || printf '')"
+	idle_fields="$(tmux display-message -p -t "$window_id" "#{pane_current_path}${tab}#{@agent_pane_context_override}${tab}#{@agent_pane_context_slug}${tab}#{@agent_pane_summary}" 2>/dev/null || printf '')"
 	idle_path="${idle_fields%%"$tab"*}"
 	idle_rest="${idle_fields#*"$tab"}"
 	idle_override="${idle_rest%%"$tab"*}"
-	idle_slug="${idle_rest#*"$tab"}"
+	idle_rest="${idle_rest#*"$tab"}"
+	idle_slug="${idle_rest%%"$tab"*}"
+	idle_summary="${idle_rest#*"$tab"}"
+	# The active turn's phrase wins; with no turn running, the active pane's.
+	[ -n "$context_summary" ] || context_summary="$idle_summary"
 	idle_project=""
 	idle_specific=""
 	idle_tab_project=""
@@ -593,6 +609,8 @@ recompute_window_summary() {
 		idle_specific="$(printf '%s\n' "$idle_details" | sed -n '2p')"
 		idle_tab_project="$(printf '%s\n' "$idle_details" | sed -n '3p')"
 	fi
+	context_pr=""
+	[ -n "$idle_path" ] && context_pr="$(pr_status_for "$idle_path" "$window_id")"
 
 	# These window options are a derived compatibility/status summary. Pane
 	# options above remain authoritative when more than one agent shares a window.
@@ -609,7 +627,9 @@ recompute_window_summary() {
 		set-window-option -q -t "$window_id" @agent_context_idle_project "$idle_project" \; \
 		set-window-option -q -t "$window_id" @agent_context_idle_tab_project "$idle_tab_project" \; \
 		set-window-option -q -t "$window_id" @agent_context_idle_specific "$idle_specific" \; \
-		set-window-option -q -t "$window_id" @agent_context_activity "$context_activity"
+		set-window-option -q -t "$window_id" @agent_context_activity "$context_activity" \; \
+		set-window-option -q -t "$window_id" @agent_context_pr "$context_pr" \; \
+		set-window-option -q -t "$window_id" @agent_context_summary "$context_summary"
 }
 
 format_declared_project() {
@@ -749,6 +769,157 @@ derive_project_details() {
 	fi
 
 	printf '%s\n%s\n%s\n' "$context_label" "$context_specific" "$context_tab_label"
+}
+
+# pr_branch_for prints "<repo root><tab><branch>" for a path when PR status
+# applies: a git checkout on a named branch that is not the default branch
+# (origin/HEAD, or main/master/develop when origin/HEAD is unset).
+pr_branch_for() {
+	pr_path="$1"
+	command -v git >/dev/null 2>&1 || return 1
+	pr_root="$(git -C "$pr_path" rev-parse --show-toplevel 2>/dev/null)" || return 1
+	pr_branch="$(git -C "$pr_path" symbolic-ref --quiet --short HEAD 2>/dev/null)" || return 1
+	pr_default="$(git -C "$pr_path" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || printf '')"
+	pr_default="${pr_default#origin/}"
+	case "$pr_branch" in
+		'' | main | master | develop | "$pr_default") return 1 ;;
+	esac
+	printf '%s\t%s\n' "$pr_root" "$pr_branch"
+}
+
+# pr_cache_file prints the cache path for a repo root and branch. The cache
+# holds one tab-separated line: fetch epoch, then PR number, state, draft flag,
+# review decision and check summary, or "none" when the branch has no PR.
+pr_cache_file() {
+	pr_key="$(printf '%s\t%s' "$1" "$2" | cksum | awk '{print $1}')"
+	printf '%s/tmux-attention/pr/%s\n' "${XDG_CACHE_HOME:-$HOME/.cache}" "$pr_key"
+}
+
+# pr_render turns a cache line into the status text, e.g. "#1286 ✓ approved".
+# Closed PRs, missing PRs and failed lookups render as nothing.
+pr_render() {
+	printf '%s\n' "$1" | awk -F '\t' '
+		$2 == "" || $2 == "none" || $2 == "error" || $3 == "CLOSED" { exit }
+		{
+			text = "#" $2
+			if ($3 == "MERGED") { print text " merged"; exit }
+			if ($6 == "pass") text = text " ✓"
+			else if ($6 == "fail") text = text " ✗"
+			else if ($6 == "pending") text = text " ●"
+			if ($4 == "true") text = text " draft"
+			if ($5 == "APPROVED") text = text " approved"
+			else if ($5 == "CHANGES_REQUESTED") text = text " changes"
+			print text
+		}'
+}
+
+# pr_status_for prints the cached PR text for the checkout at a path and, when
+# the cache is missing or older than @tmux_attention_pr_ttl, starts one
+# background `pr-fetch` for the window. A lock directory keeps concurrent
+# refreshes from launching duplicate lookups; the status bar never waits on
+# the network.
+pr_status_for() {
+	[ "$(tmux show-option -gqv @tmux_attention_pr_status 2>/dev/null)" = "on" ] || return 0
+	command -v gh >/dev/null 2>&1 || return 0
+	pr_target="$(pr_branch_for "$1")" || return 0
+	pr_file="$(pr_cache_file "${pr_target%%"$tab"*}" "${pr_target#*"$tab"}")"
+	pr_line=""
+	[ -r "$pr_file" ] && pr_line="$(cat "$pr_file" 2>/dev/null)"
+	pr_ttl="$(tmux show-option -gqv @tmux_attention_pr_ttl 2>/dev/null)"
+	case "$pr_ttl" in '' | *[!0-9]*) pr_ttl=180 ;; esac
+	pr_fetched="${pr_line%%"$tab"*}"
+	case "$pr_fetched" in '' | *[!0-9]*) pr_fetched=0 ;; esac
+	if [ $(($(date +%s) - pr_fetched)) -ge "$pr_ttl" ]; then
+		pr_lock="$pr_file.lock"
+		mkdir -p "${pr_file%/*}" 2>/dev/null
+		# A lock older than a minute belongs to a lookup that died; reclaim it.
+		if [ -d "$pr_lock" ] && [ -n "$(find "$pr_lock" -maxdepth 0 -mmin +1 2>/dev/null)" ]; then
+			rmdir "$pr_lock" 2>/dev/null
+		fi
+		if mkdir "$pr_lock" 2>/dev/null; then
+			("$TMUX_ATTENTION_DIR/tmux-attention" pr-fetch --target "$2" >/dev/null 2>&1 &)
+		fi
+	fi
+	[ -n "$pr_line" ] && pr_render "$pr_line"
+	return 0
+}
+
+# pr_fetch looks up the PR for the target window's active pane branch with
+# gh, writes the cache atomically, releases the lock and recomputes the window
+# summary so the new text appears without waiting for another hook.
+pr_fetch() {
+	tab="$(printf '\t')"
+	fetch_path="$(tmux display-message -p -t "$target" '#{pane_current_path}' 2>/dev/null)" || return 1
+	fetch_target="$(pr_branch_for "$fetch_path")" || return 0
+	fetch_root="${fetch_target%%"$tab"*}"
+	fetch_branch="${fetch_target#*"$tab"}"
+	fetch_file="$(pr_cache_file "$fetch_root" "$fetch_branch")"
+	mkdir -p "${fetch_file%/*}" 2>/dev/null
+	# shellcheck disable=SC2016  # jq program, not shell expansions
+	fetch_jq='[.number, .state, .isDraft, (.reviewDecision // ""),
+		([.statusCheckRollup[]? | (.conclusion // .state // "") | ascii_upcase] as $c
+		| [.statusCheckRollup[]? | (.status // "COMPLETED")] as $s
+		| if ($c | map(select(. == "FAILURE" or . == "ERROR" or . == "CANCELLED" or . == "TIMED_OUT" or . == "ACTION_REQUIRED" or . == "STARTUP_FAILURE")) | length) > 0 then "fail"
+		elif (($s | map(select(. != "COMPLETED")) | length) > 0) or (($c | map(select(. == "" or . == "PENDING" or . == "EXPECTED")) | length) > 0) then "pending"
+		elif ($c | length) > 0 then "pass" else "none" end)] | @tsv'
+	fetch_err="$fetch_file.err"
+	if fetch_row="$(cd "$fetch_root" && GH_PROMPT_DISABLED=1 gh pr view "$fetch_branch" \
+		--json number,state,isDraft,reviewDecision,statusCheckRollup --jq "$fetch_jq" 2>"$fetch_err")"; then
+		:
+	elif grep -qi 'no pull requests found' "$fetch_err" 2>/dev/null; then
+		fetch_row="none"
+	else
+		fetch_row="error"
+	fi
+	rm -f "$fetch_err"
+	printf '%s\t%s\n' "$(date +%s)" "$fetch_row" >"$fetch_file.tmp.$$" && mv -f "$fetch_file.tmp.$$" "$fetch_file"
+	rmdir "$fetch_file.lock" 2>/dev/null
+	recompute_window_summary
+}
+
+# set_summary stores or clears the agent-declared phrase for the target pane
+# (@agent_pane_summary), trimmed to @tmux_attention_summary_max characters,
+# then recomputes the window so the status bar picks it up.
+set_summary() {
+	require_target
+	if [ "$summary_action" = "clear" ]; then
+		summary_text=""
+	else
+		summary_max="$(tmux show-option -gqv @tmux_attention_summary_max 2>/dev/null)"
+		case "$summary_max" in '' | *[!0-9]*) summary_max=40 ;; esac
+		summary_text="$(printf '%s' "$summary_text" | awk -v max="$summary_max" '{
+			if (length($0) > max) print substr($0, 1, max - 1) "…"; else print
+		}')"
+	fi
+	tmux set-option -pq -t "$target" @agent_pane_summary "$summary_text"
+	recompute_window_summary
+}
+
+# command_start records a short summary of the command that just started in a
+# shell pane (tmux 3.8 pane-command-started) as @agent_pane_command. It reads
+# the terminal's foreground process group, so it sees "make t" rather than
+# just "make". Agent panes and commands that end before the read are skipped.
+command_start() {
+	require_target
+	agent_fields="$(tmux display-message -p -t "$target" '#{@agent_pane_owner}#{@agent_pane_context_active}' 2>/dev/null || printf '')"
+	[ -z "$agent_fields" ] || return 0
+	sleep 0.3
+	shell_pid="$(tmux display-message -p -t "$target" '#{pane_pid}' 2>/dev/null || printf '')"
+	[ -n "$shell_pid" ] || return 0
+	fg_pgid="$(ps -o tpgid= -p "$shell_pid" 2>/dev/null | tr -d ' ')"
+	case "$fg_pgid" in '' | *[!0-9]* | "$shell_pid" | -1 | 0) return 0 ;; esac
+	fg_args="$(ps -o args= -p "$fg_pgid" 2>/dev/null)"
+	[ -n "$fg_args" ] || return 0
+	fg_cmd="${fg_args%% *}"
+	fg_rest=""
+	[ "$fg_cmd" != "$fg_args" ] && fg_rest=" ${fg_args#* }"
+	fg_summary="${fg_cmd##*/}$fg_rest"
+	summary_max="$(tmux show-option -gqv @tmux_attention_command_max 2>/dev/null)"
+	case "$summary_max" in '' | *[!0-9]*) summary_max=24 ;; esac
+	fg_summary="$(printf '%s' "$fg_summary" | tr '\t\n' '  ' | awk -v max="$summary_max" '{
+		if (length($0) > max) print substr($0, 1, max - 1) "…"; else print
+	}')"
+	tmux set-option -pq -t "$target" @agent_pane_command "$fg_summary"
 }
 
 set_turn_start() {
@@ -1037,6 +1208,8 @@ activity_value=""
 project=""
 project_slug=""
 project_action=""
+summary_action=""
+summary_text=""
 owner="${TMUX_ATTENTION_OWNER:-}"
 write_verified=""
 pane_owner=""
@@ -1190,6 +1363,20 @@ while [ "$#" -gt 0 ]; do
 					fi
 					shift
 					continue
+				elif [ "$state" = "summary" ]; then
+					# summary set <words...>: the words after "set" join into one
+					# phrase, so agents need not quote it.
+					if [ -z "$summary_action" ]; then
+						summary_action="$1"
+					elif [ "$summary_action" = "set" ]; then
+						summary_text="${summary_text:+$summary_text }$1"
+					else
+						printf 'tmux-attention: unexpected argument: %s\n' "$1" >&2
+						usage >&2
+						exit 2
+					fi
+					shift
+					continue
 				elif [ "$state" = "shell-init" ]; then
 					# First positional is the shell; any that follow name
 					# commands to emit a full wrapper for.
@@ -1317,7 +1504,25 @@ case "$state" in
 				;;
 		esac
 		;;
-	get|list|turn-start|turn-active|turn-stop|turn-done|refresh|claim|disown)
+	get|list|turn-start|turn-active|turn-stop|turn-done|refresh|claim|disown|command-start|pr-fetch)
+		;;
+	summary)
+		case "$summary_action" in
+			set)
+				if [ -z "$summary_text" ]; then
+					printf 'tmux-attention: summary set requires a phrase\n' >&2
+					usage >&2
+					exit 2
+				fi
+				;;
+			clear)
+				;;
+			*)
+				printf 'tmux-attention: summary requires set <phrase> or clear\n' >&2
+				usage >&2
+				exit 2
+				;;
+		esac
 		;;
 	shell-init)
 		# Emits text only: no tmux server and no target required, so it runs
@@ -1457,6 +1662,18 @@ case "$state" in
 		;;
 	refresh)
 		recompute_window_summary
+		exit $?
+		;;
+	command-start)
+		command_start
+		exit $?
+		;;
+	summary)
+		set_summary
+		exit $?
+		;;
+	pr-fetch)
+		pr_fetch
 		exit $?
 		;;
 	turn-start)

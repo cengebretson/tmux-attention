@@ -6,6 +6,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Add `summary set <phrase>` / `summary clear`, a short agent-declared phrase
+  carried into the window summary as `@agent_context_summary`.
+- Add `@tmux_attention_pr_status`, a background-cached `gh` lookup of the
+  branch's pull request rendered as `#1286 ✓ approved`.
+- Add `@tmux_attention_command_summary` (tmux 3.8+), showing the current pane's
+  running shell command and its elapsed time, or its name after a failure.
+- Add `@tmux_attention_context_details`, which composes the summary, PR status
+  and command summary for status bars.
+- Refresh the context on every shell prompt on tmux 3.8
+  (`@tmux_attention_refresh_on_prompt`, on by default).
+
+### Changed
+
+- Drop the outline robot "blink" frame from the robot animation; it renders
+  inverted next to the filled faces.
+
 ## [0.14.0] - 2026-11-03
 
 ### Added

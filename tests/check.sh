@@ -1019,7 +1019,7 @@ if [ "$tmux_major" -gt 3 ] || { [ "$tmux_major" -eq 3 ] && [ "$tmux_minor" -ge 8
 	"$ROOT_DIR/tmux-attention.tmux"
 	robot_spinner="$(tmux_test show-option -gqv @tmux_attention_working_spinner)"
 	assert_contains "#{A/2:󰚩," "$robot_spinner" "robot style starts on the resting robot at 200ms per frame"
-	assert_contains "󱙺" "$robot_spinner" "robot style blinks with the outline robot"
+	assert_not_contains "󱙺" "$robot_spinner" "robot style leaves out the inverted outline robot"
 	assert_contains "󱚟" "$robot_spinner" "robot style glances with the confused robot"
 	tmux_test set-option -gq @tmux_attention_working_style spinner
 	"$ROOT_DIR/tmux-attention.tmux"
@@ -1072,6 +1072,26 @@ if [ "$tmux_major" -gt 3 ] || { [ "$tmux_major" -eq 3 ] && [ "$tmux_minor" -ge 8
 		assert_eq "" "$(tmux_test show-options -pqv -t "$shell_pane" @agent_pane_attention)" \
 			"agent-owned panes are left to their agent hooks"
 
+		# Command summary: the running command shows with its elapsed time, a
+		# failure keeps the name with a cross, and agent panes show nothing.
+		tmux_test set-option -pq -t "$shell_pane" @agent_pane_owner ''
+		tmux_test set-option -gq @tmux_attention_command_summary on
+		tmux_test send-keys -t "$shell_pane" 'sleep 3' Enter
+		assert_eq "sleep 3" "$(wait_for_pane_option "$shell_pane" @agent_pane_command "sleep 3")" \
+			"command summary captures the full foreground command line"
+		assert_contains "⏵ sleep 3" "$(tmux_test display-message -p -t "$shell_pane" '#{E:@tmux_attention_command_text}')" \
+			"command text shows the running command"
+		sleep 3
+		tmux_test send-keys -t "$shell_pane" 'sh -c "sleep 1; exit 3"' Enter
+		sleep 3
+		assert_contains "✗ sh -c sleep 1; exit 3" \
+			"$(tmux_test display-message -p -t "$shell_pane" '#{E:@tmux_attention_command_text}')" \
+			"a failed command keeps its name with a cross"
+		tmux_test set-option -pq -t "$shell_pane" @agent_pane_owner some-agent
+		assert_eq "" "$(tmux_test display-message -p -t "$shell_pane" '#{E:@tmux_attention_command_text}')" \
+			"agent panes never show a command summary"
+		tmux_test set-option -gq @tmux_attention_command_summary off
+
 		tmux_test kill-pane -t "$shell_pane"
 		tmux_test set-option -gq @tmux_attention_shell_done off
 	else
@@ -1081,5 +1101,77 @@ else
 	assert_eq "#{@tmux_attention_icon_working}" "$(tmux_test show-option -gqv @tmux_attention_working_spinner)" \
 		"working spinner falls back to the static icon before tmux 3.8"
 fi
+
+# Agent summary phrase: declared per pane, joined from words, trimmed, and
+# carried into the window summary for the details format.
+"$ROOT_DIR/scripts/tmux-attention" summary set fix PR status cache --target "$pane"
+assert_eq "fix PR status cache" "$(tmux_test show-options -pqv -t "$pane" @agent_pane_summary)" \
+	"summary set joins its words into one phrase"
+assert_eq "fix PR status cache" "$(tmux_test show-options -wqv -t "$pane" @agent_context_summary)" \
+	"the window summary carries the pane phrase"
+assert_contains " · fix PR status cache" "$(tmux_test display-message -p -t "$pane" '#{E:@tmux_attention_context_details}')" \
+	"context details lead with the agent phrase"
+tmux_test set-option -gq @tmux_attention_summary_max 10
+"$ROOT_DIR/scripts/tmux-attention" summary set a much longer phrase than fits --target "$pane"
+assert_eq "a much lo…" "$(tmux_test show-options -pqv -t "$pane" @agent_pane_summary)" \
+	"summary phrases are trimmed to @tmux_attention_summary_max"
+"$ROOT_DIR/scripts/tmux-attention" summary clear --target "$pane"
+assert_eq "" "$(tmux_test show-options -wqv -t "$pane" @agent_context_summary)" "summary clear removes the phrase"
+summary_rc=0
+"$ROOT_DIR/scripts/tmux-attention" summary set --target "$pane" >/dev/null 2>&1 || summary_rc=$?
+assert_eq "2" "$summary_rc" "summary set without a phrase is a usage error"
+
+# PR status: a gh shim stands in for GitHub. The first refresh starts a
+# background lookup; once it lands, the window shows the rendered PR text.
+PR_TMP="$(mktemp -d "${TMPDIR:-/tmp}/tmux-attention-pr.XXXXXX")"
+git -C "$PR_TMP" init -q -b feature/FLYWL-42-pr-status
+git -C "$PR_TMP" -c user.email=t@example.com -c user.name=t commit -q --allow-empty -m init
+cat >"$TMP_BIN/gh" <<'GHEOF'
+#!/bin/sh
+case "$PR_SHIM_MODE" in
+	none) echo 'no pull requests found for branch "x"' >&2; exit 1 ;;
+	*) printf '42\tOPEN\tfalse\tAPPROVED\tpass\n' ;;
+esac
+GHEOF
+chmod +x "$TMP_BIN/gh"
+pr_pane="$(tmux_test new-window -d -P -F '#{pane_id}' -c "$PR_TMP" -t tmux-attention-test)"
+tmux_test set-option -gq @tmux_attention_pr_status on
+export XDG_CACHE_HOME="$PR_TMP/cache"
+
+# wait_for_window_option polls a window option until it equals the expected
+# value or about five seconds pass, then prints what it last saw.
+wait_for_window_option() {
+	_tries=0
+	_seen=""
+	while [ "$_tries" -lt 50 ]; do
+		_seen="$(tmux_test show-options -wqv -t "$1" "$2")"
+		[ "$_seen" = "$3" ] && break
+		_tries=$((_tries + 1))
+		sleep 0.1
+	done
+	printf '%s' "$_seen"
+}
+
+"$ROOT_DIR/scripts/tmux-attention" refresh --target "$pr_pane"
+assert_eq "#42 ✓ approved" "$(wait_for_window_option "$pr_pane" @agent_context_pr "#42 ✓ approved")" \
+	"PR status renders number, checks and review once the lookup lands"
+assert_contains " · #42 ✓ approved" "$(tmux_test display-message -p -t "$pr_pane" '#{E:@tmux_attention_context_details}')" \
+	"context details include the PR status"
+
+rm -rf "$XDG_CACHE_HOME"
+PR_SHIM_MODE=none "$ROOT_DIR/scripts/tmux-attention" refresh --target "$pr_pane"
+sleep 1
+"$ROOT_DIR/scripts/tmux-attention" refresh --target "$pr_pane"
+assert_eq "" "$(tmux_test show-options -wqv -t "$pr_pane" @agent_context_pr)" "a branch with no PR shows nothing"
+
+git -C "$PR_TMP" checkout -q -b develop
+rm -rf "$XDG_CACHE_HOME"
+"$ROOT_DIR/scripts/tmux-attention" refresh --target "$pr_pane"
+sleep 1
+assert_eq "" "$(tmux_test show-options -wqv -t "$pr_pane" @agent_context_pr)" "default branches skip the PR lookup"
+tmux_test kill-window -t "$pr_pane"
+tmux_test set-option -gq @tmux_attention_pr_status off
+unset XDG_CACHE_HOME
+rm -rf "$PR_TMP" "$TMP_BIN/gh"
 
 printf 'all checks passed\n'

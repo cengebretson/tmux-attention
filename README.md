@@ -120,7 +120,7 @@ accepted and ignored.
 set -g @tmux_attention_working_animation "on"
 set -g @tmux_attention_working_frames "⠋,⠙,⠹,⠸,⠼,⠴,⠦,⠧,⠇,⠏"
 set -g @tmux_attention_working_frame_ticks "1" # 100ms per frame
-# Or use the built-in robot that idles, blinks, smiles and glances around
+# Or use the built-in robot that idles, smiles, glances around and gets excited
 # (Nerd Fonts 3 robot glyphs). It ignores the frames and ticks above.
 set -g @tmux_attention_working_style "robot" # spinner (default) or robot
 
@@ -134,6 +134,31 @@ set -g @tmux_attention_shell_done_min_seconds "30"
 
 Shell markers use source `shell` and reason `command_finished` or
 `command_failed`, and clear on view like any other marker.
+
+### Context details
+
+`#{E:@tmux_attention_context_details}` renders extra detail after the context
+label, each part led by the project separator:
+
+- **Agent summary**: a 3-5 word phrase the agent declares with
+  `tmux-attention summary set fix PR status cache` (or `summary clear`). Any
+  agent that can run a shell command can set it, so it works for Claude Code
+  and Codex alike; ask for it in the agent's global instructions.
+- **PR status** (`@tmux_attention_pr_status on`): the branch's pull request as
+  `#1286 ✓ approved`, with `✗` for failing checks, `●` for running checks,
+  `draft`, `changes` and `merged`. Looked up with `gh` in the background and
+  cached for `@tmux_attention_pr_ttl` seconds (default 180). Default branches
+  are skipped.
+- **Command summary** (`@tmux_attention_command_summary on`, tmux 3.8+): the
+  current pane's running shell command as `⏵ make t 3m`, or `✗ make t` after it
+  fails. Agent panes are skipped.
+
+```tmux
+set -g status-right "#{E:@tmux_attention_context}#{E:@tmux_attention_context_details}"
+```
+
+On tmux 3.8 the context also refreshes on every shell prompt, so `cd` and
+`git checkout` show up immediately (`@tmux_attention_refresh_on_prompt`).
 
 For a single leading tab glyph, `#{E:@tmux_attention_tab_icon}` renders the
 highest-priority state: an attention icon first, then the working icon while an
