@@ -1109,12 +1109,17 @@ assert_eq "fix PR status cache" "$(tmux_test show-options -pqv -t "$pane" @agent
 	"summary set joins its words into one phrase"
 assert_eq "fix PR status cache" "$(tmux_test show-options -wqv -t "$pane" @agent_context_summary)" \
 	"the window summary carries the pane phrase"
-assert_contains " · fix PR status cache" "$(tmux_test display-message -p -t "$pane" '#{E:@tmux_attention_context_details}')" \
-	"context details lead with the agent phrase"
+tmux_test set-option -pq -t "$pane" @agent_pane_owner some-agent
+assert_eq " · fix PR status cache" "$(tmux_test display-message -p -t "$pane" '#{E:@tmux_attention_context_details}')" \
+	"an agent pane shows its summary phrase in the details slot"
+tmux_test set-option -pq -t "$pane" @agent_pane_owner ''
+assert_eq "" "$(tmux_test display-message -p -t "$pane" '#{E:@tmux_attention_context_details}')" \
+	"a shell pane does not show the agent phrase"
 tmux_test set-option -gq @tmux_attention_summary_max 10
 "$ROOT_DIR/scripts/tmux-attention" summary set a much longer phrase than fits --target "$pane"
 assert_eq "a much lo…" "$(tmux_test show-options -pqv -t "$pane" @agent_pane_summary)" \
 	"summary phrases are trimmed to @tmux_attention_summary_max"
+tmux_test set-option -gq @tmux_attention_summary_max 40
 "$ROOT_DIR/scripts/tmux-attention" summary clear --target "$pane"
 assert_eq "" "$(tmux_test show-options -wqv -t "$pane" @agent_context_summary)" "summary clear removes the phrase"
 summary_rc=0
@@ -1155,8 +1160,15 @@ wait_for_window_option() {
 "$ROOT_DIR/scripts/tmux-attention" refresh --target "$pr_pane"
 assert_eq "#42 ✓ approved" "$(wait_for_window_option "$pr_pane" @agent_context_pr "#42 ✓ approved")" \
 	"PR status renders number, checks and review once the lookup lands"
-assert_contains " · #42 ✓ approved" "$(tmux_test display-message -p -t "$pr_pane" '#{E:@tmux_attention_context_details}')" \
-	"context details include the PR status"
+assert_eq " · #42 ✓ approved" "$(tmux_test display-message -p -t "$pr_pane" '#{E:@tmux_attention_context_details}')" \
+	"an idle shell pane falls back to the PR status"
+tmux_test set-option -pq -t "$pr_pane" @agent_pane_owner some-agent
+assert_eq " · #42 ✓ approved" "$(tmux_test display-message -p -t "$pr_pane" '#{E:@tmux_attention_context_details}')" \
+	"an agent pane without a phrase falls back to the PR status"
+"$ROOT_DIR/scripts/tmux-attention" summary set reviewing the PR --target "$pr_pane"
+assert_eq " · reviewing the PR" "$(tmux_test display-message -p -t "$pr_pane" '#{E:@tmux_attention_context_details}')" \
+	"an agent phrase outranks the PR status"
+tmux_test set-option -pq -t "$pr_pane" @agent_pane_owner ''
 
 rm -rf "$XDG_CACHE_HOME"
 PR_SHIM_MODE=none "$ROOT_DIR/scripts/tmux-attention" refresh --target "$pr_pane"

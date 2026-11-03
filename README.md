@@ -137,8 +137,15 @@ Shell markers use source `shell` and reason `command_finished` or
 
 ### Context details
 
-`#{E:@tmux_attention_context_details}` renders extra detail after the context
-label, each part led by the project separator:
+`#{E:@tmux_attention_context_details}` renders one detail after the context
+label, led by the project separator and chosen by the pane you are looking at:
+
+| Pane | Shows | Falls back to |
+| --- | --- | --- |
+| Agent (owned or mid-turn) | its summary phrase | the branch PR |
+| Shell | the running or failed command | the branch PR |
+
+The parts:
 
 - **Agent summary**: a 3-5 word phrase the agent declares with
   `tmux-attention summary set fix PR status cache` (or `summary clear`). Any
@@ -154,7 +161,7 @@ label, each part led by the project separator:
   fails. Agent panes are skipped.
 
 ```tmux
-set -g status-right "#{E:@tmux_attention_context}#{E:@tmux_attention_context_details}"
+set -g status-right "#{E:@tmux_attention_context}#{=/40/…:#{E:@tmux_attention_context_details}}"
 ```
 
 On tmux 3.8 the context also refreshes on every shell prompt, so `cd` and

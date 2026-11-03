@@ -143,14 +143,18 @@ set_default_option "@tmux_attention_project_separator" " · "
 
 set_default_option "@tmux_attention_context" "#{?#{==:#{@agent_context_active},1},#{@agent_context_project}#{E:@tmux_attention_activity_suffix},#{?#{!=:#{@agent_context_idle_project},},#{@agent_context_idle_project},#{b:pane_current_path}}}"
 
-# Details that follow the context label: PR status, then the current pane's
-# command summary, each led by the project separator. Kept separate from
-# @tmux_attention_context so themes can place or drop them independently:
-#   #{E:@tmux_attention_context}#{E:@tmux_attention_context_details}
+# Details that follow the context label: one slot, chosen by the pane you are
+# looking at, so the parts never pile up.
+#   agent pane (owned, or mid-turn): its summary phrase, else the branch PR
+#   shell pane: the running or failed command, else the branch PR
+# Each part leads with the project separator. Kept separate from
+# @tmux_attention_context so themes can place, truncate or drop it:
+#   #{E:@tmux_attention_context}#{=/40/…:#{E:@tmux_attention_context_details}}
 set_default_option "@tmux_attention_command_duration" "#{?#{e|<:#{pane_command_duration},60},#{pane_command_duration}s,#{?#{e|<:#{pane_command_duration},3600},#{e|/:#{pane_command_duration},60}m,#{e|/:#{pane_command_duration},3600}h}}"
 set_default_option "@tmux_attention_command_text" "#{?#{&&:#{==:#{@tmux_attention_command_summary},on},#{&&:#{==:#{@agent_pane_owner}#{@agent_pane_context_active},},#{!=:#{@agent_pane_command},}}},#{?#{==:#{pane_command_running},1},#{E:@tmux_attention_project_separator}⏵ #{@agent_pane_command} #{E:@tmux_attention_command_duration},#{?#{&&:#{!=:#{pane_command_status},},#{!=:#{pane_command_status},0}},#{E:@tmux_attention_project_separator}✗ #{@agent_pane_command},}},}"
 set_default_option "@tmux_attention_summary_max" "40"
-set_default_option "@tmux_attention_context_details" "#{?#{!=:#{@agent_context_summary},},#{E:@tmux_attention_project_separator}#{@agent_context_summary},}#{?#{!=:#{@agent_context_pr},},#{E:@tmux_attention_project_separator}#{@agent_context_pr},}#{E:@tmux_attention_command_text}"
+set_default_option "@tmux_attention_pr_text" "#{?#{!=:#{@agent_context_pr},},#{E:@tmux_attention_project_separator}#{@agent_context_pr},}"
+set_default_option "@tmux_attention_context_details" "#{?#{||:#{!=:#{@agent_pane_owner},},#{==:#{@agent_pane_context_active},1}},#{?#{!=:#{@agent_pane_summary},},#{E:@tmux_attention_project_separator}#{@agent_pane_summary},#{E:@tmux_attention_pr_text}},#{?#{!=:#{E:@tmux_attention_command_text},},#{E:@tmux_attention_command_text},#{E:@tmux_attention_pr_text}}}"
 
 # Same resolution for window tabs, but falling back to the window name rather than a
 # directory, since that is what a tab shows by default. Pair it with

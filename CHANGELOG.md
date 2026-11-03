@@ -6,6 +6,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- `@tmux_attention_context_details` now shows a single detail chosen by the
+  current pane: an agent pane shows its summary phrase, a shell pane its
+  running or failed command, and either falls back to the branch PR.
+
 ## [0.15.0] - 2026-11-03
 
 ### Added
