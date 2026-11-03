@@ -38,8 +38,40 @@ set_default_option "@tmux_attention_clear_on_view" "on"
 # nothing; it is still a redraw per tick per client, which matters on slow
 # links such as a phone over mosh.
 set_default_option "@tmux_attention_working_animation" "off"
+# Style picks the frames: "spinner" uses @tmux_attention_working_frames and
+# @tmux_attention_working_frame_ticks, "robot" is a built-in Nerd Font robot
+# that idles, blinks, smiles, glances sideways and gets excited on a ~7s loop.
+set_default_option "@tmux_attention_working_style" "spinner"
 set_default_option "@tmux_attention_working_frames" "⠋,⠙,⠹,⠸,⠼,⠴,⠦,⠧,⠇,⠏"
 set_default_option "@tmux_attention_working_frame_ticks" "1"
+
+# robot_frames prints the built-in robot animation: one frame per 200ms tick,
+# repeated to set how long each face is held. Faces are nf-md-robot (rest),
+# robot_outline (blink), robot_happy, robot_confused (glance) and
+# robot_excited, all in Nerd Fonts 3.
+robot_frames() {
+	local rest='󰚩' blink='󱙺' happy='󱜙' glance='󱚟' excited='󱚣'
+	local -a frames=()
+	add_frames() {
+		local face="$1" count="$2" i
+		for ((i = 0; i < count; i++)); do
+			frames+=("$face")
+		done
+	}
+	add_frames "$rest" 10
+	add_frames "$blink" 1
+	add_frames "$rest" 6
+	add_frames "$happy" 5
+	add_frames "$rest" 4
+	add_frames "$blink" 1
+	add_frames "$rest" 6
+	add_frames "$glance" 4
+	add_frames "$rest" 3
+	add_frames "$excited" 3
+	add_frames "$rest" 4
+	local IFS=,
+	printf '%s' "${frames[*]}"
+}
 # Shell done: when an OSC 133 shell command (fish 4+, or any prompt that emits
 # OSC 133) runs at least this many seconds in a pane no agent owns, mark the
 # pane done on success or blocked on a non-zero exit.
@@ -75,6 +107,10 @@ set_default_option "@tmux_attention_tab_icon" "#{?#{==:#{@agent_attention},input
 if [ "$supports_38" = 1 ]; then
 	working_ticks="$(tmux show-option -gqv @tmux_attention_working_frame_ticks 2>/dev/null)"
 	working_frames="$(tmux show-option -gqv @tmux_attention_working_frames 2>/dev/null)"
+	if [ "$(tmux show-option -gqv @tmux_attention_working_style 2>/dev/null)" = robot ]; then
+		working_ticks=2
+		working_frames="$(robot_frames)"
+	fi
 	case "$working_ticks" in
 		'' | *[!0-9]*) working_ticks=1 ;;
 	esac

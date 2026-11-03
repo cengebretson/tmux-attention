@@ -120,6 +120,9 @@ accepted and ignored.
 set -g @tmux_attention_working_animation "on"
 set -g @tmux_attention_working_frames "⠋,⠙,⠹,⠸,⠼,⠴,⠦,⠧,⠇,⠏"
 set -g @tmux_attention_working_frame_ticks "1" # 100ms per frame
+# Or use the built-in robot that idles, blinks, smiles and glances around
+# (Nerd Fonts 3 robot glyphs). It ignores the frames and ticks above.
+set -g @tmux_attention_working_style "robot" # spinner (default) or robot
 
 # Mark a pane done (exit 0) or blocked (non-zero) when an OSC 133 shell command
 # runs at least this long. fish 4+ emits OSC 133 out of the box; bash and zsh

@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Add `@tmux_attention_working_style robot`, a built-in working animation where a
+  Nerd Font robot idles, blinks, smiles, glances sideways and gets excited.
+
 ## [0.13.0] - 2026-11-03
 
 ### Added

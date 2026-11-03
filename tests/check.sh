@@ -1015,6 +1015,16 @@ if [ "$tmux_major" -gt 3 ] || { [ "$tmux_major" -eq 3 ] && [ "$tmux_minor" -ge 8
 	"$ROOT_DIR/tmux-attention.tmux"
 	assert_eq "#{A/2:a,b}" "$(tmux_test show-option -gqv @tmux_attention_working_spinner)" \
 		"working spinner follows the configured frames and ticks on reload"
+	tmux_test set-option -gq @tmux_attention_working_style robot
+	"$ROOT_DIR/tmux-attention.tmux"
+	robot_spinner="$(tmux_test show-option -gqv @tmux_attention_working_spinner)"
+	assert_contains "#{A/2:󰚩," "$robot_spinner" "robot style starts on the resting robot at 200ms per frame"
+	assert_contains "󱙺" "$robot_spinner" "robot style blinks with the outline robot"
+	assert_contains "󱚟" "$robot_spinner" "robot style glances with the confused robot"
+	tmux_test set-option -gq @tmux_attention_working_style spinner
+	"$ROOT_DIR/tmux-attention.tmux"
+	assert_eq "#{A/2:a,b}" "$(tmux_test show-option -gqv @tmux_attention_working_spinner)" \
+		"switching back to the spinner style restores the configured frames"
 	assert_contains "pane_command_duration" "$(tmux_test show-hooks -g pane-command-finished)" \
 		"shell done hook is installed on tmux 3.8"
 
