@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Add `@tmux_attention_input_animation` (tmux 3.8+), which blinks the input icon
+  in tabs while a window waits on you.
+
 ## [0.15.1] - 2026-11-03
 
 ### Changed

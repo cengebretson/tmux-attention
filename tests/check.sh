@@ -1025,6 +1025,16 @@ if [ "$tmux_major" -gt 3 ] || { [ "$tmux_major" -eq 3 ] && [ "$tmux_minor" -ge 8
 	"$ROOT_DIR/tmux-attention.tmux"
 	assert_eq "#{A/2:a,b}" "$(tmux_test show-option -gqv @tmux_attention_working_spinner)" \
 		"switching back to the spinner style restores the configured frames"
+	tmux_test set-option -gq @tmux_attention_input_on_ticks 2
+	tmux_test set-option -gq @tmux_attention_input_off_ticks 1
+	"$ROOT_DIR/tmux-attention.tmux"
+	input_blink="$(tmux_test show-option -gqv @tmux_attention_input_blink)"
+	input_icon="$(tmux_test show-option -gqv @tmux_attention_icon_input)"
+	assert_eq "#{A/1:${input_icon},${input_icon}, }" "$input_blink" \
+		"input blink shows the input icon, then a same-width space"
+	assert_contains "@tmux_attention_input_blink" "$(tmux_test show-option -gqv @tmux_attention_tab_icon)" \
+		"tab icon can blink the input state"
+	assert_eq "off" "$(tmux_test show-option -gqv @tmux_attention_input_animation)" "input blink is off by default"
 	assert_contains "pane_command_duration" "$(tmux_test show-hooks -g pane-command-finished)" \
 		"shell done hook is installed on tmux 3.8"
 

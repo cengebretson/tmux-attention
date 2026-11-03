@@ -44,6 +44,13 @@ set_default_option "@tmux_attention_working_animation" "off"
 set_default_option "@tmux_attention_working_style" "spinner"
 set_default_option "@tmux_attention_working_frames" "⠋,⠙,⠹,⠸,⠼,⠴,⠦,⠧,⠇,⠏"
 set_default_option "@tmux_attention_working_frame_ticks" "1"
+# Input blink (tmux 3.8): the input icon blinks while a window waits on you,
+# on for @tmux_attention_input_on_ticks and off for @tmux_attention_input_off_ticks
+# 100ms ticks, so "needs you" stands out from every other state. Static
+# otherwise, and no redraws while nothing is waiting.
+set_default_option "@tmux_attention_input_animation" "off"
+set_default_option "@tmux_attention_input_on_ticks" "5"
+set_default_option "@tmux_attention_input_off_ticks" "3"
 
 # robot_frames prints the built-in robot animation: one frame per 200ms tick,
 # repeated to set how long each face is held. Faces are nf-md-robot (rest),
@@ -110,7 +117,7 @@ else
 fi
 
 set_default_option "@tmux_attention_status" "#{?#{==:#{@agent_attention},input},#{@tmux_attention_icon_input} ,#{?#{==:#{@agent_attention},blocked},#{@tmux_attention_icon_blocked} ,#{?#{==:#{@agent_attention},review},#{@tmux_attention_icon_review} ,#{?#{==:#{@agent_attention},done},#{@tmux_attention_icon_done} ,}}}}"
-set_default_option "@tmux_attention_tab_icon" "#{?#{==:#{@agent_attention},input},#{@tmux_attention_icon_input},#{?#{==:#{@agent_attention},blocked},#{@tmux_attention_icon_blocked},#{?#{==:#{@agent_attention},review},#{@tmux_attention_icon_review},#{?#{==:#{@agent_attention},done},#{@tmux_attention_icon_done},#{?#{==:#{@agent_context_active},1},#{?#{==:#{@tmux_attention_working_animation},on},#{E:@tmux_attention_working_spinner},#{@tmux_attention_icon_working}},}}}}}"
+set_default_option "@tmux_attention_tab_icon" "#{?#{==:#{@agent_attention},input},#{?#{==:#{@tmux_attention_input_animation},on},#{E:@tmux_attention_input_blink},#{@tmux_attention_icon_input}},#{?#{==:#{@agent_attention},blocked},#{@tmux_attention_icon_blocked},#{?#{==:#{@agent_attention},review},#{@tmux_attention_icon_review},#{?#{==:#{@agent_attention},done},#{@tmux_attention_icon_done},#{?#{==:#{@agent_context_active},1},#{?#{==:#{@tmux_attention_working_animation},on},#{E:@tmux_attention_working_spinner},#{@tmux_attention_icon_working}},}}}}}"
 # Resolved on every load (not set-if-unset) so frame or tick changes apply on
 # reload. Older servers have no A modifier and fall back to the static icon.
 if [ "$supports_38" = 1 ]; then
@@ -127,6 +134,21 @@ if [ "$supports_38" = 1 ]; then
 		"#{A/${working_ticks}:${working_frames:-⠋,⠙,⠹,⠸,⠼,⠴,⠦,⠧,⠇,⠏}}"
 else
 	queue_tmux set-option -gq "@tmux_attention_working_spinner" "#{@tmux_attention_icon_working}"
+fi
+# The blink frames repeat the configured input icon, then a space of the same
+# width, so the tab text does not shift while it blinks.
+if [ "$supports_38" = 1 ]; then
+	input_icon="$(tmux show-option -gqv @tmux_attention_icon_input 2>/dev/null)"
+	input_on="$(tmux show-option -gqv @tmux_attention_input_on_ticks 2>/dev/null)"
+	input_off="$(tmux show-option -gqv @tmux_attention_input_off_ticks 2>/dev/null)"
+	case "$input_on" in '' | *[!0-9]* | 0) input_on=5 ;; esac
+	case "$input_off" in '' | *[!0-9]* | 0) input_off=3 ;; esac
+	input_frames=""
+	for ((i = 0; i < input_on; i++)); do input_frames+="${input_icon:-󱐋},"; done
+	for ((i = 0; i < input_off; i++)); do input_frames+=" ,"; done
+	queue_tmux set-option -gq "@tmux_attention_input_blink" "#{A/1:${input_frames%,}}"
+else
+	queue_tmux set-option -gq "@tmux_attention_input_blink" "#{@tmux_attention_icon_input}"
 fi
 # Context label. Prefers the active turn's project, then the idle label derived from the
 # window's active pane (ticket key, else repo name, else directory), and only falls back to
