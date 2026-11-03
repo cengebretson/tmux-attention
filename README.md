@@ -108,6 +108,30 @@ set -g @catppuccin_window_text "#{E:@tmux_attention_status}#W"
 set -g @catppuccin_window_current_text "#{E:@tmux_attention_status}#W"
 ```
 
+### tmux 3.8 extras
+
+Two opt-in features use tmux 3.8 additions. On older servers the options are
+accepted and ignored.
+
+```tmux
+# Animate the working icon in tabs with the #{A:...} modifier. tmux redraws the
+# status line every 100ms only while a spinner is visible, so idle windows cost
+# nothing, but each tick is a redraw on every attached client.
+set -g @tmux_attention_working_animation "on"
+set -g @tmux_attention_working_frames "⠋,⠙,⠹,⠸,⠼,⠴,⠦,⠧,⠇,⠏"
+set -g @tmux_attention_working_frame_ticks "1" # 100ms per frame
+
+# Mark a pane done (exit 0) or blocked (non-zero) when an OSC 133 shell command
+# runs at least this long. fish 4+ emits OSC 133 out of the box; bash and zsh
+# need a prompt integration that does. Panes owned by an agent are skipped,
+# since their own hooks already report state.
+set -g @tmux_attention_shell_done "on"
+set -g @tmux_attention_shell_done_min_seconds "30"
+```
+
+Shell markers use source `shell` and reason `command_finished` or
+`command_failed`, and clear on view like any other marker.
+
 For a single leading tab glyph, `#{E:@tmux_attention_tab_icon}` renders the
 highest-priority state: an attention icon first, then the working icon while an
 agent turn is active, otherwise nothing. This lets a custom format fall back to

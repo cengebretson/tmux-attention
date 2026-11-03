@@ -29,8 +29,60 @@ set_default_option "@tmux_attention_icon_working" "󰚩"
 set_default_option "@tmux_attention_clear_delay" "8"
 set_default_option "@tmux_attention_clear_on_view" "on"
 
+# Optional tmux 3.8 features. Both are off by default so upgrading the plugin
+# never changes how an existing setup behaves.
+#
+# Working animation: replace the static working icon with a spinner built on
+# the #{A/<ticks>:<frames>} modifier. tmux redraws the status line every 100ms
+# only while an animated branch is actually rendered, so idle windows cost
+# nothing; it is still a redraw per tick per client, which matters on slow
+# links such as a phone over mosh.
+set_default_option "@tmux_attention_working_animation" "off"
+set_default_option "@tmux_attention_working_frames" "⠋,⠙,⠹,⠸,⠼,⠴,⠦,⠧,⠇,⠏"
+set_default_option "@tmux_attention_working_frame_ticks" "1"
+# Shell done: when an OSC 133 shell command (fish 4+, or any prompt that emits
+# OSC 133) runs at least this many seconds in a pane no agent owns, mark the
+# pane done on success or blocked on a non-zero exit.
+set_default_option "@tmux_attention_shell_done" "off"
+set_default_option "@tmux_attention_shell_done_min_seconds" "30"
+
+# tmux_supports_38 reports whether the running server is tmux 3.8 or newer.
+# Versions look like "3.8", "3.7c" or "next-3.9"; only the leading
+# major.minor matters here.
+tmux_supports_38() {
+	local version major minor
+	version="$(tmux display-message -p '#{version}' 2>/dev/null)"
+	version="${version#next-}"
+	major="${version%%.*}"
+	minor="${version#*.}"
+	minor="${minor%%[!0-9]*}"
+	case "$major$minor" in
+		'' | *[!0-9]*) return 1 ;;
+	esac
+	[ "$major" -gt 3 ] || { [ "$major" -eq 3 ] && [ "$minor" -ge 8 ]; }
+}
+
+if tmux_supports_38; then
+	supports_38=1
+else
+	supports_38=0
+fi
+
 set_default_option "@tmux_attention_status" "#{?#{==:#{@agent_attention},input},#{@tmux_attention_icon_input} ,#{?#{==:#{@agent_attention},blocked},#{@tmux_attention_icon_blocked} ,#{?#{==:#{@agent_attention},review},#{@tmux_attention_icon_review} ,#{?#{==:#{@agent_attention},done},#{@tmux_attention_icon_done} ,}}}}"
-set_default_option "@tmux_attention_tab_icon" "#{?#{==:#{@agent_attention},input},#{@tmux_attention_icon_input},#{?#{==:#{@agent_attention},blocked},#{@tmux_attention_icon_blocked},#{?#{==:#{@agent_attention},review},#{@tmux_attention_icon_review},#{?#{==:#{@agent_attention},done},#{@tmux_attention_icon_done},#{?#{==:#{@agent_context_active},1},#{@tmux_attention_icon_working},}}}}}"
+set_default_option "@tmux_attention_tab_icon" "#{?#{==:#{@agent_attention},input},#{@tmux_attention_icon_input},#{?#{==:#{@agent_attention},blocked},#{@tmux_attention_icon_blocked},#{?#{==:#{@agent_attention},review},#{@tmux_attention_icon_review},#{?#{==:#{@agent_attention},done},#{@tmux_attention_icon_done},#{?#{==:#{@agent_context_active},1},#{?#{==:#{@tmux_attention_working_animation},on},#{E:@tmux_attention_working_spinner},#{@tmux_attention_icon_working}},}}}}}"
+# Resolved on every load (not set-if-unset) so frame or tick changes apply on
+# reload. Older servers have no A modifier and fall back to the static icon.
+if [ "$supports_38" = 1 ]; then
+	working_ticks="$(tmux show-option -gqv @tmux_attention_working_frame_ticks 2>/dev/null)"
+	working_frames="$(tmux show-option -gqv @tmux_attention_working_frames 2>/dev/null)"
+	case "$working_ticks" in
+		'' | *[!0-9]*) working_ticks=1 ;;
+	esac
+	queue_tmux set-option -gq "@tmux_attention_working_spinner" \
+		"#{A/${working_ticks}:${working_frames:-⠋,⠙,⠹,⠸,⠼,⠴,⠦,⠧,⠇,⠏}}"
+else
+	queue_tmux set-option -gq "@tmux_attention_working_spinner" "#{@tmux_attention_icon_working}"
+fi
 # Context label. Prefers the active turn's project, then the idle label derived from the
 # window's active pane (ticket key, else repo name, else directory), and only falls back to
 # the raw pane directory when the summary has never run for this window. The point of the
@@ -90,5 +142,15 @@ done
 # A pane normally sends turn-stop before it exits. Recompute after an explicit
 # kill as well so a vanished pane cannot leave a stale window summary behind.
 queue_tmux set-hook -g "after-kill-pane[90]" "run-shell -b \"\\\"$CURRENT_DIR/scripts/tmux-attention\\\" refresh --target \\\"#{window_id}\\\" >/dev/null 2>&1 || true\""
+
+# Long shell commands (tmux 3.8 OSC 133 events). The format gate keeps the hook
+# free for short commands and agent-owned panes, so run-shell only spawns when a
+# marker will actually be written. pane_command_status/duration describe the
+# command that just finished in the hook's pane.
+if [ "$supports_38" = 1 ]; then
+	shell_done_gate="#{&&:#{==:#{@tmux_attention_shell_done},on},#{&&:#{==:#{@agent_pane_owner},},#{e|>=:#{pane_command_duration},#{@tmux_attention_shell_done_min_seconds}}}}"
+	shell_done_run="run-shell -b \"\\\"$CURRENT_DIR/scripts/tmux-attention\\\" #{?#{==:#{pane_command_status},0},done,blocked} --target \\\"#{pane_id}\\\" --source shell --reason #{?#{==:#{pane_command_status},0},command_finished,command_failed} >/dev/null 2>&1 || true\""
+	queue_tmux set-hook -g "pane-command-finished[90]" "if -F '$shell_done_gate' '$shell_done_run'"
+fi
 
 tmux "${load_batch[@]}"

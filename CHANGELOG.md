@@ -6,6 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Add `@tmux_attention_working_animation` (tmux 3.8+), which animates the working
+  tab icon with the `#{A:...}` modifier using configurable frames and speed.
+- Add `@tmux_attention_shell_done` (tmux 3.8+), which marks a pane done or
+  blocked when an OSC 133 shell command of at least
+  `@tmux_attention_shell_done_min_seconds` finishes in a pane no agent owns.
+
 ## [0.12.1] - 2026-08-20
 
 ### Documentation

@@ -997,4 +997,79 @@ shell_rc=0
 "$ROOT_DIR/scripts/tmux-attention" shell-init >/dev/null 2>&1 || shell_rc=$?
 assert_eq "2" "$shell_rc" "shell-init requires a shell name"
 
+# tmux 3.8 features: both are opt-in, so a plain load must leave behavior as-is.
+assert_eq "off" "$(tmux_test show-option -gqv @tmux_attention_working_animation)" \
+	"working animation is off by default"
+assert_eq "off" "$(tmux_test show-option -gqv @tmux_attention_shell_done)" "shell done is off by default"
+assert_contains "@tmux_attention_working_spinner" "$(tmux_test show-option -gqv @tmux_attention_tab_icon)" \
+	"tab icon can switch to the working spinner"
+
+tmux_version="$(tmux_test display-message -p '#{version}')"
+tmux_version="${tmux_version#next-}"
+tmux_major="${tmux_version%%.*}"
+tmux_minor="${tmux_version#*.}"
+tmux_minor="${tmux_minor%%[!0-9]*}"
+if [ "$tmux_major" -gt 3 ] || { [ "$tmux_major" -eq 3 ] && [ "$tmux_minor" -ge 8 ]; }; then
+	tmux_test set-option -gq @tmux_attention_working_frame_ticks 2
+	tmux_test set-option -gq @tmux_attention_working_frames "a,b"
+	"$ROOT_DIR/tmux-attention.tmux"
+	assert_eq "#{A/2:a,b}" "$(tmux_test show-option -gqv @tmux_attention_working_spinner)" \
+		"working spinner follows the configured frames and ticks on reload"
+	assert_contains "pane_command_duration" "$(tmux_test show-hooks -g pane-command-finished)" \
+		"shell done hook is installed on tmux 3.8"
+
+	if command -v fish >/dev/null 2>&1; then
+		tmux_test set-option -gq @tmux_attention_shell_done on
+		tmux_test set-option -gq @tmux_attention_shell_done_min_seconds 1
+		shell_pane="$(tmux_test new-window -d -P -F '#{pane_id}' -t tmux-attention-test fish --no-config)"
+
+		# wait_for_pane_option polls a pane option until it equals the expected
+		# value or about five seconds pass, then prints what it last saw.
+		wait_for_pane_option() {
+			_tries=0
+			_seen=""
+			while [ "$_tries" -lt 50 ]; do
+				_seen="$(tmux_test show-options -pqv -t "$1" "$2")"
+				[ "$_seen" = "$3" ] && break
+				_tries=$((_tries + 1))
+				sleep 0.1
+			done
+			printf '%s' "$_seen"
+		}
+
+		# Give fish time to print its first prompt (and OSC 133 marks).
+		sleep 1.5
+		tmux_test send-keys -t "$shell_pane" 'true' Enter
+		sleep 1
+		assert_eq "" "$(tmux_test show-options -pqv -t "$shell_pane" @agent_pane_attention)" \
+			"a short shell command leaves no marker"
+
+		tmux_test send-keys -t "$shell_pane" 'sleep 1.2; false' Enter
+		assert_eq "blocked" "$(wait_for_pane_option "$shell_pane" @agent_pane_attention blocked)" \
+			"a long failing shell command marks the pane blocked"
+		assert_eq "command_failed" "$(tmux_test show-options -pqv -t "$shell_pane" @agent_pane_attention_reason)" \
+			"a failing shell command records its reason"
+
+		"$ROOT_DIR/scripts/tmux-attention" clear --target "$shell_pane"
+		tmux_test send-keys -t "$shell_pane" 'sleep 1.2; true' Enter
+		assert_eq "done" "$(wait_for_pane_option "$shell_pane" @agent_pane_attention "done")" \
+			"a long successful shell command marks the pane done"
+
+		"$ROOT_DIR/scripts/tmux-attention" clear --target "$shell_pane"
+		tmux_test set-option -pq -t "$shell_pane" @agent_pane_owner some-agent
+		tmux_test send-keys -t "$shell_pane" 'sleep 1.2; true' Enter
+		sleep 2.5
+		assert_eq "" "$(tmux_test show-options -pqv -t "$shell_pane" @agent_pane_attention)" \
+			"agent-owned panes are left to their agent hooks"
+
+		tmux_test kill-pane -t "$shell_pane"
+		tmux_test set-option -gq @tmux_attention_shell_done off
+	else
+		pass "fish not installed; skipping OSC 133 shell done checks"
+	fi
+else
+	assert_eq "#{@tmux_attention_icon_working}" "$(tmux_test show-option -gqv @tmux_attention_working_spinner)" \
+		"working spinner falls back to the static icon before tmux 3.8"
+fi
+
 printf 'all checks passed\n'
