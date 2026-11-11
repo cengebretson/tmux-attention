@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-11-11
+
 ### Added
 
 - `doctor` checks that the tmux server is reachable and names a sandbox-blocked
@@ -449,7 +451,8 @@ who can run tmux can set the option too.
   server and a GitHub Actions CI workflow running ShellCheck and the tests.
 - Documentation: `README.md` and `docs/hooks.md`.
 
-[Unreleased]: https://github.com/cengebretson/tmux-attention/compare/v0.16.0...HEAD
+[Unreleased]: https://github.com/cengebretson/tmux-attention/compare/v0.17.0...HEAD
+[0.17.0]: https://github.com/cengebretson/tmux-attention/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/cengebretson/tmux-attention/compare/v0.15.1...v0.16.0
 [0.15.1]: https://github.com/cengebretson/tmux-attention/compare/v0.15.0...v0.15.1
 [0.15.0]: https://github.com/cengebretson/tmux-attention/compare/v0.14.0...v0.15.0
