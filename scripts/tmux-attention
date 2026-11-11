@@ -145,6 +145,14 @@ doctor() {
 		return 1
 	fi
 
+	if server_err="$(tmux_server_error)"; then
+		check_ok "tmux server is reachable"
+	elif is_socket_permission_error "$server_err"; then
+		check_warn "tmux server socket is not permitted: $(sandbox_socket_hint)"
+	else
+		check_warn "tmux server is not reachable: $server_err"
+	fi
+
 	if [ -n "${TMUX_PANE:-}" ]; then
 		check_ok "running inside tmux"
 	else
@@ -500,9 +508,45 @@ disown_pane() {
 	recompute_window_summary
 }
 
+# tmux_server_error prints tmux's stderr when the server cannot be reached and
+# returns 1; it prints nothing and returns 0 when the server answers.
+tmux_server_error() {
+	server_err="$(tmux display-message -p '#{pid}' 2>&1 >/dev/null)" && return 0
+	printf '%s' "$server_err"
+	return 1
+}
+
+# is_socket_permission_error succeeds when tmux's error means the client was
+# denied access to the server socket, which is what an agent sandbox produces.
+is_socket_permission_error() {
+	case "$1" in
+		*"Operation not permitted"* | *"Permission denied"*) return 0 ;;
+	esac
+	return 1
+}
+
+# sandbox_socket_hint names the socket a sandbox must allow; TMUX holds
+# "socket,pid,session", so the socket is everything before the first comma.
+sandbox_socket_hint() {
+	socket_path="${TMUX%%,*}"
+	[ -n "$socket_path" ] || socket_path="the tmux server socket"
+	printf 'a sandbox is likely blocking the tmux socket; allow %s (README: Sandboxed Agents)' "$socket_path"
+}
+
+# report_invalid_target explains a failed target lookup. A pane that cannot be
+# resolved is usually a typo, but under an agent sandbox every lookup fails the
+# same way because the socket itself is blocked, so name that cause when seen.
+report_invalid_target() {
+	printf 'tmux-attention: invalid target: %s\n' "$target" >&2
+	server_err="$(tmux_server_error)" && return 0
+	if is_socket_permission_error "$server_err"; then
+		printf 'tmux-attention: %s\n' "$(sandbox_socket_hint)" >&2
+	fi
+}
+
 recompute_window_summary() {
 	window_id="$(tmux display-message -p -t "$target" '#{window_id}' 2>/dev/null)" || {
-		printf 'tmux-attention: invalid target: %s\n' "$target" >&2
+		report_invalid_target
 		return 1
 	}
 	tab="$(printf '\t')"
@@ -924,7 +968,7 @@ command_start() {
 
 set_turn_start() {
 	context_path="$(tmux display-message -p -t "$target" '#{pane_current_path}' 2>/dev/null)" || {
-		printf 'tmux-attention: invalid target: %s\n' "$target" >&2
+		report_invalid_target
 		return 1
 	}
 
@@ -964,7 +1008,7 @@ set_turn_start() {
 
 set_project_override() {
 	context_path="$(tmux display-message -p -t "$target" '#{pane_current_path}' 2>/dev/null)" || {
-		printf 'tmux-attention: invalid target: %s\n' "$target" >&2
+		report_invalid_target
 		return 1
 	}
 
@@ -1026,7 +1070,7 @@ set_turn_active() {
 
 set_turn_stop() {
 	tmux display-message -p -t "$target" '#{pane_id}' >/dev/null 2>&1 || {
-		printf 'tmux-attention: invalid target: %s\n' "$target" >&2
+		report_invalid_target
 		return 1
 	}
 
@@ -1041,7 +1085,7 @@ set_turn_stop() {
 
 set_turn_done() {
 	tmux display-message -p -t "$target" '#{pane_id}' >/dev/null 2>&1 || {
-		printf 'tmux-attention: invalid target: %s\n' "$target" >&2
+		report_invalid_target
 		return 1
 	}
 
@@ -1087,7 +1131,7 @@ print_get() {
 
 	tab="$(printf '\t')"
 	target_fields="$(tmux display-message -p -t "$target" "#{pane_id}${tab}#{window_id}" 2>/dev/null)" || {
-		printf 'tmux-attention: invalid target: %s\n' "$target" >&2
+		report_invalid_target
 		return 1
 	}
 	pane_id="${target_fields%%"$tab"*}"

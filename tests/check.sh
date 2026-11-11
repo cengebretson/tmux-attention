@@ -1196,4 +1196,27 @@ tmux_test set-option -gq @tmux_attention_pr_status off
 unset XDG_CACHE_HOME
 rm -rf "$PR_TMP" "$TMP_BIN/gh"
 
+# A sandboxed agent cannot open the tmux socket; tmux then fails every call
+# with a permission error. Simulate that with a tmux that always refuses.
+BLOCKED_BIN="$TMP_BIN/blocked"
+mkdir -p "$BLOCKED_BIN"
+cat >"$BLOCKED_BIN/tmux" <<'EOF'
+#!/bin/sh
+printf 'error connecting to /tmp/tmux-test/default (Operation not permitted)\n' >&2
+exit 1
+EOF
+chmod +x "$BLOCKED_BIN/tmux"
+blocked_err="$(PATH="$BLOCKED_BIN:$PATH" TMUX="/tmp/tmux-test/default,1,0" \
+	"$ROOT_DIR/scripts/tmux-attention" summary set sandbox probe --target %1 2>&1 >/dev/null || true)"
+assert_contains "invalid target: %1" "$blocked_err" "blocked socket still reports the invalid target"
+assert_contains "allow /tmp/tmux-test/default" "$blocked_err" "blocked socket names the socket to allow"
+blocked_doctor="$(PATH="$BLOCKED_BIN:$PATH" TMUX="/tmp/tmux-test/default,1,0" \
+	"$ROOT_DIR/scripts/tmux-attention" doctor 2>&1 || true)"
+assert_contains "tmux server socket is not permitted" "$blocked_doctor" "doctor flags a blocked tmux socket"
+reachable_doctor="$("$ROOT_DIR/scripts/tmux-attention" doctor 2>&1 || true)"
+assert_contains "ok - tmux server is reachable" "$reachable_doctor" "doctor confirms a reachable tmux server"
+missing_err="$("$ROOT_DIR/scripts/tmux-attention" summary set typo probe --target %999 2>&1 >/dev/null || true)"
+assert_not_contains "sandbox" "$missing_err" "a plain bad target gets no sandbox hint"
+rm -rf "$BLOCKED_BIN"
+
 printf 'all checks passed\n'

@@ -612,6 +612,40 @@ Claude Code's `/hooks` menu is useful for verifying hook configuration. Codex
 requires hook review/trust before non-managed hooks run; in Codex, use `/hooks`
 to inspect and trust the installed hook definitions.
 
+### Sandboxed Agents
+
+Agents that run shell commands in a sandbox (Claude Code's sandbox, Codex's
+sandbox modes, macOS Seatbelt profiles) may block the tmux server's Unix
+socket. Every `tmux-attention` call then fails, usually reported as:
+
+```text
+error connecting to /private/tmp/tmux-501/default (Operation not permitted)
+tmux-attention: invalid target: %4
+tmux-attention: a sandbox is likely blocking the tmux socket; allow /private/tmp/tmux-501/default (README: Sandboxed Agents)
+```
+
+`doctor` reports the same condition as `tmux server socket is not permitted`.
+The fix is to allow the socket, whose path is the part of `$TMUX` before the
+first comma (`echo "${TMUX%%,*}"` from inside tmux). For Claude Code, add it
+to `sandbox.network.allowUnixSockets` in your settings, then restart the
+session:
+
+```json
+{
+  "sandbox": {
+    "network": {
+      "allowUnixSockets": ["/private/tmp/tmux-501/default"]
+    }
+  }
+}
+```
+
+The path contains your uid and the socket name, so keep it in machine-local
+settings rather than shared dotfiles. Prefer allowing the socket over listing
+`tmux-attention` in `sandbox.excludedCommands`: an exclusion did not take
+effect for agent-issued calls in practice, while the socket allowance covers
+hooks and agent calls alike.
+
 ### Command Not Found
 
 Hooks use the full plugin path by default. For manual use from your shell,

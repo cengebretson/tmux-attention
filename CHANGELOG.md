@@ -6,6 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `doctor` checks that the tmux server is reachable and names a sandbox-blocked
+  socket explicitly.
+- A failed target lookup caused by a denied tmux socket now adds a hint naming
+  the socket to allow, instead of only reporting `invalid target`.
+- README "Sandboxed Agents" troubleshooting for Claude Code `allowUnixSockets`.
+
 ## [0.16.0] - 2026-11-03
 
 ### Added
